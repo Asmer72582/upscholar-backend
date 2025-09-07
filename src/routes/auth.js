@@ -122,4 +122,47 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+/**
+ * @route   GET /api/auth/users
+ * @desc    Get all users
+ * @access  Private (Admin only)
+ */
+router.get('/users', auth, async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user.id);
+    if (currentUser.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    const users = await User.find().select('-password');
+    res.json(users);
+  } catch (err) {
+    console.error('Error fetching users:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route   GET /api/auth/users/search
+ * @desc    Search users by name
+ * @access  Private
+ */
+router.get('/users/search', auth, async (req, res) => {
+  try {
+    const { name } = req.query;
+    if (!name) {
+      return res.status(400).json({ message: 'Please provide a name to search' });
+    }
+
+    const users = await User.find({
+      name: { $regex: name, $options: 'i' }
+    }).select('-password');
+
+    res.json(users);
+  } catch (err) {
+    console.error('Error searching users:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 module.exports = router;
