@@ -33,8 +33,96 @@ const UserSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true,
+    required: function() {
+      return this.role !== 'trainer'; // Password not required for trainers initially
+    },
     minlength: 6
+  },
+  // Trainer-specific fields
+  resume: {
+    type: String, // Will store file path for uploaded CV
+    required: function() {
+      return this.role === 'trainer';
+    },
+    trim: true
+  },
+  demoVideoUrl: {
+    type: String,
+    required: function() {
+      return this.role === 'trainer';
+    },
+    trim: true,
+    validate: {
+      validator: function(v) {
+        if (this.role !== 'trainer') return true;
+        // Basic URL validation for YouTube, Vimeo, or cloud storage URLs
+        const urlPattern = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be|vimeo\.com|drive\.google\.com|dropbox\.com|onedrive\.live\.com|amazonaws\.com)/i;
+        return urlPattern.test(v);
+      },
+      message: 'Please provide a valid video URL from YouTube, Vimeo, or a cloud storage service'
+    }
+  },
+  expertise: {
+    type: [String],
+    required: function() {
+      return this.role === 'trainer';
+    },
+    validate: {
+      validator: function(v) {
+        if (this.role !== 'trainer') return true;
+        return v && v.length > 0;
+      },
+      message: 'Please provide at least one area of expertise'
+    }
+  },
+  experience: {
+    type: Number,
+    required: function() {
+      return this.role === 'trainer';
+    },
+    min: [0, 'Experience cannot be negative'],
+    max: [50, 'Experience cannot exceed 50 years']
+  },
+  bio: {
+    type: String,
+    required: function() {
+      return this.role === 'trainer';
+    },
+    trim: true,
+    maxlength: [500, 'Bio cannot exceed 500 characters']
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: function() {
+      return this.role === 'trainer' ? 'pending' : 'approved';
+    }
+  },
+  isApproved: {
+    type: Boolean,
+    default: function() {
+      return this.role !== 'trainer'; // Auto-approve students, trainers need approval
+    }
+  },
+  tempPassword: {
+    type: String, // Temporary password for trainers
+    required: false
+  },
+  // Wallet fields
+  walletBalance: {
+    type: Number,
+    default: 150, // Starting balance for new users
+    min: [0, 'Wallet balance cannot be negative']
+  },
+  totalEarned: {
+    type: Number,
+    default: 150, // Track total earned (including starting balance)
+    min: [0, 'Total earned cannot be negative']
+  },
+  totalSpent: {
+    type: Number,
+    default: 0,
+    min: [0, 'Total spent cannot be negative']
   },
   createdAt: {
     type: Date,

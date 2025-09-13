@@ -10,11 +10,13 @@ const app = express();
 
 // CORS configuration
 app.use(cors({
-    origin: "http://localhost:8080",
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'x-auth-token'],
+    origin: ["http://localhost:8080", "http://127.0.0.1:8080"],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'x-auth-token', 'Authorization'],
     exposedHeaders: ['x-auth-token'],
-    credentials: true
+    credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 200
 }));
 
 // Security middleware with CORS-friendly configuration
