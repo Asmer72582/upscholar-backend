@@ -8,9 +8,20 @@ require('dotenv').config();
 // Initialize express app
 const app = express();
 
-// Middleware
-app.use(cors());
-app.use(helmet());
+// CORS configuration
+app.use(cors({
+    origin: "http://localhost:8080",
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'x-auth-token'],
+    exposedHeaders: ['x-auth-token'],
+    credentials: true
+}));
+
+// Security middleware with CORS-friendly configuration
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }
+}));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

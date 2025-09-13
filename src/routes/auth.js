@@ -1,26 +1,35 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const User = require('../models/User');
-const { auth, generateToken } = require('../middleware/auth');
+const User = require("../models/User");
+const { auth, generateToken } = require("../middleware/auth");
 
 /**
  * @route   POST /api/auth/register
  * @desc    Register a new user
  * @access  Public
  */
-router.post('/register', async (req, res) => {
+router.post("/register", async (req, res) => {
+  console.log('Registration request received:', {
+    body: req.body,
+    headers: req.headers.origin
+  });
+  
   try {
-    const { name, firstname, lastname, email, password } = req.body;
+    const { name, firstname, lastname, email, password, role } = req.body;
 
     // Check if all required fields are provided
     if (!name || !firstname || !lastname || !email || !password) {
-      return res.status(400).json({ message: 'Please provide all required fields' });
+      return res
+        .status(400)
+        .json({ message: "Please provide all required fields" });
     }
 
     // Check if user already exists
     let user = await User.findOne({ email });
     if (user) {
-      return res.status(400).json({ message: 'User already exists with this email' });
+      return res
+        .status(400)
+        .json({ message: "User already exists with this email" });
     }
 
     // Create new user
@@ -29,7 +38,8 @@ router.post('/register', async (req, res) => {
       firstname,
       lastname,
       email,
-      password
+      password,
+      role: role || "student", // Default to student if no role provided
     });
 
     // Save user to database (password will be hashed by pre-save hook)
@@ -46,12 +56,31 @@ router.post('/register', async (req, res) => {
         name: user.name,
         firstname: user.firstname,
         lastname: user.lastname,
-        email: user.email
-      }
+        email: user.email,
+        role: user.role,
+        createdAt: user.createdAt,
+      },
     });
   } catch (err) {
-    console.error('Error in register route:', err.message);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error in register route:", err.message);
+    
+    // Handle validation errors
+    if (err.name === 'ValidationError') {
+      const errors = Object.values(err.errors).map(error => error.message);
+      return res.status(400).json({ 
+        message: 'Validation failed', 
+        errors: errors 
+      });
+    }
+    
+    // Handle duplicate key error (email already exists)
+    if (err.code === 11000) {
+      return res.status(400).json({ 
+        message: 'User already exists with this email' 
+      });
+    }
+    
+    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -60,25 +89,27 @@ router.post('/register', async (req, res) => {
  * @desc    Authenticate user & get token
  * @access  Public
  */
-router.post('/login', async (req, res) => {
+router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
     // Check if email and password are provided
     if (!email || !password) {
-      return res.status(400).json({ message: 'Please provide email and password' });
+      return res
+        .status(400)
+        .json({ message: "Please provide email and password" });
     }
 
     // Check if user exists
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ message: "Invalid credentials" });
     }
 
     // Check if password is correct
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ message: "Invalid credentials" });
     }
 
     // Generate JWT token
@@ -92,12 +123,14 @@ router.post('/login', async (req, res) => {
         name: user.name,
         firstname: user.firstname,
         lastname: user.lastname,
-        email: user.email
-      }
+        email: user.email,
+        role: user.role,
+        createdAt: user.createdAt,
+      },
     });
   } catch (err) {
-    console.error('Error in login route:', err.message);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error in login route:", err.message);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -106,19 +139,19 @@ router.post('/login', async (req, res) => {
  * @desc    Get current user
  * @access  Private
  */
-router.get('/me', auth, async (req, res) => {
+router.get("/me", auth, async (req, res) => {
   try {
     // Get user data from database (excluding password)
-    const user = await User.findById(req.user.id).select('-password');
-    
+    const user = await User.findById(req.user.id).select("-password");
+
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: "User not found" });
     }
-    
+
     res.json(user);
   } catch (err) {
-    console.error('Error in get user route:', err.message);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error in get user route:", err.message);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -127,18 +160,18 @@ router.get('/me', auth, async (req, res) => {
  * @desc    Get all users
  * @access  Private (Admin only)
  */
-router.get('/users', auth, async (req, res) => {
+router.get("/users", auth, async (req, res) => {
   try {
     const currentUser = await User.findById(req.user.id);
-    if (currentUser.role !== 'admin') {
-      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    if (currentUser.role !== "admin") {
+      return res.status(403).json({ message: "Access denied. Admin only." });
     }
 
-    const users = await User.find().select('-password');
+    const users = await User.find().select("-password");
     res.json(users);
   } catch (err) {
-    console.error('Error fetching users:', err.message);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error fetching users:", err.message);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -147,21 +180,23 @@ router.get('/users', auth, async (req, res) => {
  * @desc    Search users by name
  * @access  Private
  */
-router.get('/users/search', auth, async (req, res) => {
+router.get("/users/search", auth, async (req, res) => {
   try {
     const { name } = req.query;
     if (!name) {
-      return res.status(400).json({ message: 'Please provide a name to search' });
+      return res
+        .status(400)
+        .json({ message: "Please provide a name to search" });
     }
 
     const users = await User.find({
-      name: { $regex: name, $options: 'i' }
-    }).select('-password');
+      name: { $regex: name, $options: "i" },
+    }).select("-password");
 
     res.json(users);
   } catch (err) {
-    console.error('Error searching users:', err.message);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error searching users:", err.message);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
