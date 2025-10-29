@@ -1,10 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const User = require("../models/User");
+const Transaction = require("../models/Transaction");
 const { auth, generateToken } = require("../middleware/auth");
 const upload = require("../middleware/upload");
 const { sendEmail, emailTemplates } = require("../services/emailService");
 const { generateTempPassword } = require("../utils/passwordGenerator");
+const { JOINING_BONUS } = require("../config/razorpay");
+const crypto = require("crypto");
+const bcrypt = require("bcrypt");
 
 // Handle preflight requests for specific routes
 router.options("/register", (req, res) => {
@@ -145,7 +149,8 @@ router.post("/register", upload.single("resume"), async (req, res) => {
 
     // Add trainer-specific fields if role is trainer
     if (role === "trainer") {
-      userData.resume = req.file.path; // Store file path
+      // Store relative path for web access (e.g., /uploads/resumes/filename.pdf)
+      userData.resume = `/uploads/resumes/${req.file.filename}`;
       userData.demoVideoUrl = demoVideoUrl;
       userData.expertise =
         typeof expertise === "string" ? JSON.parse(expertise) : expertise;
@@ -160,6 +165,36 @@ router.post("/register", upload.single("resume"), async (req, res) => {
     // Save user to database (password will be hashed by pre-save hook for students)
     await user.save();
 
+    // Give joining bonus to all new users
+    if (JOINING_BONUS > 0) {
+      user.walletBalance = JOINING_BONUS;
+      user.totalEarned = JOINING_BONUS;
+      await user.save();
+
+      // Create transaction record for joining bonus
+      const bonusTransaction = new Transaction({
+        user: user._id,
+        type: 'credit',
+        amount: JOINING_BONUS,
+        realMoneyAmount: 0,
+        currency: 'INR',
+        description: `Welcome bonus - ${JOINING_BONUS} UpCoins`,
+        category: 'joining_bonus',
+        status: 'completed',
+        paymentMethod: 'wallet',
+        reference: `joining_bonus_${user._id}`,
+        balanceBefore: 0,
+        balanceAfter: JOINING_BONUS,
+        metadata: {
+          bonusType: 'registration',
+          userId: user._id
+        }
+      });
+      await bonusTransaction.save();
+      
+      console.log(`Joining bonus of ${JOINING_BONUS} UpCoins credited to user: ${user.email}`);
+    }
+
     // For students, generate JWT token and return login response
     if (role === "student") {
       const token = generateToken(user.id);
@@ -171,6 +206,8 @@ router.post("/register", upload.single("resume"), async (req, res) => {
         lastname: user.lastname,
         email: user.email,
         role: user.role,
+        walletBalance: user.walletBalance,
+        totalEarned: user.totalEarned,
         createdAt: user.createdAt,
         isApproved: user.isApproved,
         status: user.status,
@@ -179,7 +216,7 @@ router.post("/register", upload.single("resume"), async (req, res) => {
       return res.status(201).json({
         token,
         user: userResponse,
-        message: "Account created successfully!",
+        message: `Account created successfully! You received ${JOINING_BONUS} UpCoins as a welcome bonus!`,
       });
     }
 
@@ -642,6 +679,280 @@ router.get("/users/filter", auth, async (req, res) => {
   } catch (err) {
     console.error("Error filtering users:", err.message);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Request password reset email
+ * @access  Public
+ */
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    // Always return success message for security (don't reveal if email exists)
+    if (!user) {
+      return res.json({
+        success: true,
+        message: "If an account exists with this email, you will receive a password reset link.",
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const resetTokenHash = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
+    // Save hashed token and expiry to user (1 hour expiry)
+    user.resetPasswordToken = resetTokenHash;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    await user.save();
+
+    // Create reset URL
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/reset-password/${resetToken}`;
+
+    // Send email
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px 8px 0 0;">
+          <h2 style="color: #333; margin: 0;">Password Reset Request</h2>
+        </div>
+        <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e0e0e0;">
+          <p style="color: #333; line-height: 1.6;">Hello ${user.name},</p>
+          <p style="color: #333; line-height: 1.6;">
+            You requested to reset your password for your UpScholar account. Click the button below to reset your password:
+          </p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${resetUrl}" 
+               style="background-color: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
+              Reset Password
+            </a>
+          </div>
+          <p style="color: #666; line-height: 1.6; font-size: 14px;">
+            Or copy and paste this link into your browser:
+          </p>
+          <p style="color: #4F46E5; word-break: break-all; font-size: 14px;">
+            ${resetUrl}
+          </p>
+          <p style="color: #666; line-height: 1.6; font-size: 14px; margin-top: 30px;">
+            <strong>This link will expire in 1 hour.</strong>
+          </p>
+          <p style="color: #666; line-height: 1.6; font-size: 14px;">
+            If you didn't request this password reset, please ignore this email and your password will remain unchanged.
+          </p>
+        </div>
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 0 0 8px 8px; text-align: center;">
+          <p style="color: #666; font-size: 12px; margin: 0;">
+            This email was sent from UpScholar Learning Platform
+          </p>
+        </div>
+      </div>
+    `;
+
+    // Send email using the email service
+    try {
+      const emailResult = await sendEmail(user.email, {
+        subject: "Password Reset Request - UpScholar",
+        html: emailHtml,
+      });
+      
+      console.log('Password reset email sent:', emailResult);
+    } catch (emailError) {
+      console.error('Error sending password reset email:', emailError);
+      // Don't fail the request if email fails, but log it
+    }
+
+    res.json({
+      success: true,
+      message: "If an account exists with this email, you will receive a password reset link.",
+    });
+  } catch (err) {
+    console.error("Error in forgot password:", err.message);
+    res.status(500).json({ message: "Error sending reset email. Please try again." });
+  }
+});
+
+/**
+ * @route   POST /api/auth/reset-password/:token
+ * @desc    Reset password with token
+ * @access  Public
+ */
+router.post("/reset-password/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ message: "Password is required" });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters long" });
+    }
+
+    // Hash the token from URL to compare with stored hash
+    const resetTokenHash = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    // Find user with valid reset token
+    const user = await User.findOne({
+      resetPasswordToken: resetTokenHash,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      console.log('Reset token not found or expired');
+      return res.status(400).json({ 
+        message: "Password reset token is invalid or has expired" 
+      });
+    }
+
+    console.log('User found for password reset:', user.email);
+
+    // Set new password (will be hashed by pre-save hook)
+    user.password = password;
+
+    // Clear reset token fields
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+
+    await user.save();
+    
+    console.log('Password reset successful for:', user.email);
+
+    // Send confirmation email
+    const confirmationHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px 8px 0 0;">
+          <h2 style="color: #333; margin: 0;">Password Changed Successfully</h2>
+        </div>
+        <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e0e0e0;">
+          <p style="color: #333; line-height: 1.6;">Hello ${user.name},</p>
+          <p style="color: #333; line-height: 1.6;">
+            Your password has been successfully changed. You can now log in with your new password.
+          </p>
+          <p style="color: #666; line-height: 1.6; font-size: 14px; margin-top: 30px;">
+            If you didn't make this change, please contact our support team immediately.
+          </p>
+        </div>
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 0 0 8px 8px; text-align: center;">
+          <p style="color: #666; font-size: 12px; margin: 0;">
+            This email was sent from UpScholar Learning Platform
+          </p>
+        </div>
+      </div>
+    `;
+
+    // Send confirmation email
+    try {
+      await sendEmail(user.email, {
+        subject: "Password Changed - UpScholar",
+        html: confirmationHtml,
+      });
+      console.log('Password change confirmation email sent');
+    } catch (emailError) {
+      console.error('Error sending confirmation email:', emailError);
+      // Don't fail the request if email fails
+    }
+
+    res.json({
+      success: true,
+      message: "Password has been reset successfully. You can now log in with your new password.",
+    });
+  } catch (err) {
+    console.error("Error in reset password:", err.message);
+    res.status(500).json({ message: "Error resetting password. Please try again." });
+  }
+});
+
+/**
+ * @route   POST /api/auth/change-password
+ * @desc    Change password for logged-in user
+ * @access  Private
+ */
+router.post("/change-password", auth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Current password and new password are required" });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters long" });
+    }
+
+    // Find user
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Verify current password
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Current password is incorrect" });
+    }
+
+    // Set new password (will be hashed by pre-save hook)
+    user.password = newPassword;
+    await user.save();
+
+    console.log('Password changed successfully for:', user.email);
+
+    // Send confirmation email
+    const confirmationHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px 8px 0 0;">
+          <h2 style="color: #333; margin: 0;">Password Changed Successfully</h2>
+        </div>
+        <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e0e0e0;">
+          <p style="color: #333; line-height: 1.6;">Hello ${user.name},</p>
+          <p style="color: #333; line-height: 1.6;">
+            Your password has been successfully changed.
+          </p>
+          <p style="color: #666; line-height: 1.6; font-size: 14px; margin-top: 30px;">
+            If you didn't make this change, please contact our support team immediately.
+          </p>
+        </div>
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 0 0 8px 8px; text-align: center;">
+          <p style="color: #666; font-size: 12px; margin: 0;">
+            This email was sent from UpScholar Learning Platform
+          </p>
+        </div>
+      </div>
+    `;
+
+    // Send confirmation email
+    try {
+      await sendEmail(user.email, {
+        subject: "Password Changed - UpScholar",
+        html: confirmationHtml,
+      });
+      console.log('Password change confirmation email sent');
+    } catch (emailError) {
+      console.error('Error sending confirmation email:', emailError);
+    }
+
+    res.json({
+      success: true,
+      message: "Password changed successfully",
+    });
+  } catch (err) {
+    console.error("Error changing password:", err.message);
+    res.status(500).json({ message: "Error changing password. Please try again." });
   }
 });
 

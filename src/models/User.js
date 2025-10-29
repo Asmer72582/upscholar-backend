@@ -108,6 +108,15 @@ const UserSchema = new mongoose.Schema({
     type: String, // Temporary password for trainers
     required: false
   },
+  // Password reset fields
+  resetPasswordToken: {
+    type: String,
+    required: false
+  },
+  resetPasswordExpires: {
+    type: Date,
+    required: false
+  },
   // Wallet fields
   walletBalance: {
     type: Number,

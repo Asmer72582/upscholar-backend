@@ -4,6 +4,8 @@ const User = require('../models/User');
 const Lecture = require('../models/Lecture');
 const Transaction = require('../models/Transaction');
 const { auth } = require('../middleware/auth');
+const nodemailer = require('nodemailer');
+const bcrypt = require('bcrypt');
 
 /**
  * @route   GET /api/trainer/stats/dashboard
@@ -415,6 +417,431 @@ router.get('/analytics/performance', auth, async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Error fetching performance metrics:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route   GET /api/trainer/students
+ * @desc    Get all students enrolled in trainer's lectures with progress
+ * @access  Private (Trainer only)
+ */
+router.get('/students', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (user.role !== 'trainer') {
+      return res.status(403).json({ message: 'Access denied. Trainer only.' });
+    }
+
+    // Get all lectures by this trainer
+    const lectures = await Lecture.find({ trainer: user._id })
+      .populate('enrolledStudents.student', 'name email firstname lastname')
+      .select('title enrolledStudents status scheduledAt');
+
+    // Create a map to track unique students and their data
+    const studentMap = new Map();
+
+    lectures.forEach(lecture => {
+      lecture.enrolledStudents.forEach(enrollment => {
+        const studentId = enrollment.student._id.toString();
+        const student = enrollment.student;
+
+        if (!studentMap.has(studentId)) {
+          studentMap.set(studentId, {
+            id: studentId,
+            name: student.name || `${student.firstname} ${student.lastname}`,
+            email: student.email,
+            enrolledCourses: [],
+            totalLectures: 0,
+            completedLectures: 0,
+            attendedLectures: 0,
+            enrolledDate: enrollment.enrolledAt,
+            lastActive: enrollment.enrolledAt
+          });
+        }
+
+        const studentData = studentMap.get(studentId);
+        
+        // Add course to enrolled courses if not already added
+        if (!studentData.enrolledCourses.find(c => c.lectureId === lecture._id.toString())) {
+          studentData.enrolledCourses.push({
+            lectureId: lecture._id.toString(),
+            lectureTitle: lecture.title,
+            status: lecture.status,
+            scheduledAt: lecture.scheduledAt,
+            attended: enrollment.attended
+          });
+        }
+
+        // Count lectures
+        studentData.totalLectures++;
+        if (lecture.status === 'completed') {
+          studentData.completedLectures++;
+          if (enrollment.attended) {
+            studentData.attendedLectures++;
+          }
+        }
+
+        // Update last active date
+        if (new Date(enrollment.enrolledAt) > new Date(studentData.lastActive)) {
+          studentData.lastActive = enrollment.enrolledAt;
+        }
+
+        // Update earliest enrollment date
+        if (new Date(enrollment.enrolledAt) < new Date(studentData.enrolledDate)) {
+          studentData.enrolledDate = enrollment.enrolledAt;
+        }
+      });
+    });
+
+    // Convert map to array and calculate progress
+    const students = Array.from(studentMap.values()).map(student => {
+      const progress = student.totalLectures > 0 
+        ? Math.round((student.completedLectures / student.totalLectures) * 100)
+        : 0;
+      
+      // Determine status based on last active date
+      const daysSinceActive = Math.floor((Date.now() - new Date(student.lastActive).getTime()) / (1000 * 60 * 60 * 24));
+      let status = 'active';
+      if (progress === 100) {
+        status = 'completed';
+      } else if (daysSinceActive > 7) {
+        status = 'inactive';
+      }
+
+      return {
+        ...student,
+        progress,
+        status,
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random`
+      };
+    });
+
+    // Sort by enrollment date (most recent first)
+    students.sort((a, b) => new Date(b.enrolledDate) - new Date(a.enrolledDate));
+
+    res.json(students);
+  } catch (err) {
+    console.error('Error fetching trainer students:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route   GET /api/trainer/students/course-stats
+ * @desc    Get course-wise student statistics for trainer
+ * @access  Private (Trainer only)
+ */
+router.get('/students/course-stats', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (user.role !== 'trainer') {
+      return res.status(403).json({ message: 'Access denied. Trainer only.' });
+    }
+
+    // Get course statistics grouped by lecture title
+    const courseStats = await Lecture.aggregate([
+      { $match: { trainer: user._id } },
+      {
+        $group: {
+          _id: '$title',
+          totalStudents: { $sum: { $size: '$enrolledStudents' } },
+          completedLectures: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'completed'] }, 1, 0]
+            }
+          },
+          totalLectures: { $sum: 1 },
+          averageRating: { $avg: '$averageRating' },
+          activeStudents: {
+            $sum: {
+              $cond: [
+                { $in: ['$status', ['scheduled', 'live']] },
+                { $size: '$enrolledStudents' },
+                0
+              ]
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          course: '$_id',
+          totalStudents: 1,
+          activeStudents: 1,
+          averageProgress: {
+            $cond: [
+              { $gt: ['$totalLectures', 0] },
+              { $multiply: [{ $divide: ['$completedLectures', '$totalLectures'] }, 100] },
+              0
+            ]
+          },
+          completionRate: {
+            $cond: [
+              { $gt: ['$totalLectures', 0] },
+              { $multiply: [{ $divide: ['$completedLectures', '$totalLectures'] }, 100] },
+              0
+            ]
+          }
+        }
+      },
+      { $sort: { totalStudents: -1 } }
+    ]);
+
+    const formattedStats = courseStats.map(stat => ({
+      course: stat.course,
+      totalStudents: stat.totalStudents,
+      activeStudents: stat.activeStudents,
+      averageProgress: Math.round(stat.averageProgress),
+      completionRate: Math.round(stat.completionRate)
+    }));
+
+    res.json(formattedStats);
+  } catch (err) {
+    console.error('Error fetching course stats:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route   POST /api/trainer/students/send-email
+ * @desc    Send email to a student
+ * @access  Private (Trainer only)
+ */
+router.post('/students/send-email', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (user.role !== 'trainer') {
+      return res.status(403).json({ message: 'Access denied. Trainer only.' });
+    }
+
+    const { studentId, subject, content } = req.body;
+
+    // Validate input
+    if (!studentId || !subject || !content) {
+      return res.status(400).json({ message: 'Student ID, subject, and content are required' });
+    }
+
+    // Get student details
+    const student = await User.findById(studentId);
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    // Verify that the student is enrolled in at least one of the trainer's lectures
+    const enrollment = await Lecture.findOne({
+      trainer: user._id,
+      'enrolledStudents.student': studentId
+    });
+
+    if (!enrollment) {
+      return res.status(403).json({ message: 'You can only send emails to your enrolled students' });
+    }
+
+    // Create email transporter
+    const transporter = nodemailer.createTransport({
+      service: process.env.EMAIL_SERVICE || 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS || process.env.EMAIL_PASSWORD
+      }
+    });
+
+    // Email options
+    const mailOptions = {
+      from: `${user.name} <${process.env.EMAIL_USER}>`,
+      to: student.email,
+      subject: subject,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px 8px 0 0;">
+            <h2 style="color: #333; margin: 0;">Message from ${user.name}</h2>
+            <p style="color: #666; margin: 5px 0 0 0;">Your Trainer on UpScholar</p>
+          </div>
+          <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e0e0e0;">
+            <div style="white-space: pre-wrap; color: #333; line-height: 1.6;">
+              ${content}
+            </div>
+          </div>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 0 0 8px 8px; text-align: center;">
+            <p style="color: #666; font-size: 12px; margin: 0;">
+              This email was sent from UpScholar Learning Platform
+            </p>
+          </div>
+        </div>
+      `,
+      text: content
+    };
+
+    // Send email
+    await transporter.sendMail(mailOptions);
+
+    res.json({ 
+      success: true, 
+      message: 'Email sent successfully',
+      recipient: student.email
+    });
+  } catch (err) {
+    console.error('Error sending email:', err.message);
+    
+    // Check if it's an email configuration error
+    if (err.message.includes('auth') || err.message.includes('credentials')) {
+      return res.status(500).json({ 
+        message: 'Email service not configured. Please contact administrator.' 
+      });
+    }
+    
+    res.status(500).json({ message: 'Failed to send email. Please try again.' });
+  }
+});
+
+/**
+ * @route   GET /api/trainer/profile
+ * @desc    Get trainer profile details
+ * @access  Private (Trainer only)
+ */
+router.get('/profile', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (user.role !== 'trainer') {
+      return res.status(403).json({ message: 'Access denied. Trainer only.' });
+    }
+
+    // Get trainer profile with all details
+    const trainer = await User.findById(req.user.id).select('-password');
+
+    // Get additional stats
+    const totalLectures = await Lecture.countDocuments({ trainer: req.user.id });
+    const upcomingLectures = await Lecture.countDocuments({ 
+      trainer: req.user.id,
+      status: 'scheduled',
+      scheduledAt: { $gte: new Date() }
+    });
+    const completedLectures = await Lecture.countDocuments({ 
+      trainer: req.user.id,
+      status: 'completed'
+    });
+
+    // Get total students enrolled
+    const lectures = await Lecture.find({ trainer: req.user.id });
+    const uniqueStudents = new Set();
+    lectures.forEach(lecture => {
+      lecture.enrolledStudents.forEach(enrollment => {
+        uniqueStudents.add(enrollment.student.toString());
+      });
+    });
+
+    res.json({
+      ...trainer.toObject(),
+      stats: {
+        totalLectures,
+        upcomingLectures,
+        completedLectures,
+        totalStudents: uniqueStudents.size
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching trainer profile:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route   PUT /api/trainer/profile
+ * @desc    Update trainer profile
+ * @access  Private (Trainer only)
+ */
+router.put('/profile', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (user.role !== 'trainer') {
+      return res.status(403).json({ message: 'Access denied. Trainer only.' });
+    }
+
+    const { firstname, lastname, bio, demoVideoUrl, expertise } = req.body;
+
+    // Build update object
+    const updateFields = {};
+    if (firstname) updateFields.firstname = firstname;
+    if (lastname) updateFields.lastname = lastname;
+    if (bio) updateFields.bio = bio;
+    if (demoVideoUrl) updateFields.demoVideoUrl = demoVideoUrl;
+    if (expertise) updateFields.expertise = expertise;
+    // Note: experience cannot be updated by trainer, only by admin
+
+    // Update name if first or last name changed
+    if (firstname || lastname) {
+      const currentUser = await User.findById(req.user.id);
+      updateFields.name = `${firstname || currentUser.firstname} ${lastname || currentUser.lastname}`;
+    }
+
+    const updatedTrainer = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: updateFields },
+      { new: true }
+    ).select('-password');
+
+    res.json({
+      message: 'Profile updated successfully',
+      trainer: updatedTrainer
+    });
+  } catch (err) {
+    console.error('Error updating trainer profile:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route   PUT /api/trainer/change-password
+ * @desc    Change trainer password
+ * @access  Private (Trainer only)
+ */
+router.put('/change-password', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (user.role !== 'trainer') {
+      return res.status(403).json({ message: 'Access denied. Trainer only.' });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+
+    // Validate input
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current password and new password are required' });
+    }
+
+    // Validate new password strength
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+    }
+
+    // Get user with password
+    const trainer = await User.findById(req.user.id);
+
+    // Check if user has a password (some trainers might not have one initially)
+    if (!trainer.password) {
+      return res.status(400).json({ 
+        message: 'No password set. Please contact admin to set up your password.' 
+      });
+    }
+
+    // Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, trainer.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    trainer.password = await bcrypt.hash(newPassword, salt);
+    await trainer.save();
+
+    res.json({ 
+      success: true,
+      message: 'Password changed successfully' 
+    });
+  } catch (err) {
+    console.error('Error changing password:', err.message);
     res.status(500).json({ message: 'Server error' });
   }
 });

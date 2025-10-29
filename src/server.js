@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const mongoose = require('mongoose');
+const path = require('path');
 require('dotenv').config();
 
 // Initialize express app
@@ -27,6 +28,9 @@ app.use(helmet({
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Routes
 app.get('/', (req, res) => {
@@ -56,8 +60,13 @@ mongoose.connect(process.env.MONGO_URI)
 
 // Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+
+// Initialize Socket.io for real-time meeting
+const { initializeSocket } = require('./socket/meetingSocket');
+initializeSocket(server);
+console.log('Socket.io initialized for meeting system');
 
 module.exports = app;

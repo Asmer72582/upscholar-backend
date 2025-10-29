@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const Lecture = require('../models/Lecture');
+const Transaction = require('../models/Transaction');
 const { auth } = require('../middleware/auth');
 
 /**
@@ -289,6 +290,159 @@ router.get('/stats/pending-approvals', auth, async (req, res) => {
     res.json(approvals);
   } catch (err) {
     console.error('Error fetching pending approvals:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route   GET /api/admin/withdrawals
+ * @desc    Get all withdrawal requests
+ * @access  Private (Admin only)
+ */
+router.get('/withdrawals', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    const { status } = req.query;
+    const filter = { category: 'withdrawal' };
+    
+    if (status && ['pending', 'completed', 'failed'].includes(status)) {
+      filter.status = status;
+    }
+
+    const withdrawals = await Transaction.find(filter)
+      .populate('user', 'firstName lastName email')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      withdrawals
+    });
+  } catch (err) {
+    console.error('Error fetching withdrawals:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route   PUT /api/admin/withdrawals/:id/approve
+ * @desc    Approve a withdrawal request
+ * @access  Private (Admin only)
+ */
+router.put('/withdrawals/:id/approve', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    const withdrawal = await Transaction.findById(req.params.id);
+    if (!withdrawal) {
+      return res.status(404).json({ message: 'Withdrawal request not found' });
+    }
+
+    if (withdrawal.category !== 'withdrawal') {
+      return res.status(400).json({ message: 'Invalid transaction type' });
+    }
+
+    if (withdrawal.status !== 'pending') {
+      return res.status(400).json({ message: 'Withdrawal already processed' });
+    }
+
+    withdrawal.status = 'completed';
+    withdrawal.metadata.approvedBy = user._id;
+    withdrawal.metadata.approvedAt = new Date();
+    await withdrawal.save();
+
+    console.log(`Admin ${user.email} approved withdrawal ${withdrawal._id} for ₹${withdrawal.realMoneyAmount}`);
+
+    res.json({
+      success: true,
+      message: 'Withdrawal approved successfully',
+      withdrawal
+    });
+  } catch (err) {
+    console.error('Error approving withdrawal:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route   PUT /api/admin/withdrawals/:id/reject
+ * @desc    Reject a withdrawal request and refund
+ * @access  Private (Admin only)
+ */
+router.put('/withdrawals/:id/reject', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    const { reason } = req.body;
+    if (!reason) {
+      return res.status(400).json({ message: 'Rejection reason is required' });
+    }
+
+    const withdrawal = await Transaction.findById(req.params.id);
+    if (!withdrawal) {
+      return res.status(404).json({ message: 'Withdrawal request not found' });
+    }
+
+    if (withdrawal.category !== 'withdrawal') {
+      return res.status(400).json({ message: 'Invalid transaction type' });
+    }
+
+    if (withdrawal.status !== 'pending') {
+      return res.status(400).json({ message: 'Withdrawal already processed' });
+    }
+
+    // Refund the amount to trainer's wallet
+    const trainer = await User.findById(withdrawal.user);
+    trainer.walletBalance += withdrawal.amount;
+    await trainer.save();
+
+    // Update withdrawal status
+    withdrawal.status = 'failed';
+    withdrawal.metadata.rejectedBy = user._id;
+    withdrawal.metadata.rejectedAt = new Date();
+    withdrawal.metadata.rejectionReason = reason;
+    await withdrawal.save();
+
+    // Create refund transaction
+    const refundTransaction = new Transaction({
+      user: trainer._id,
+      type: 'credit',
+      amount: withdrawal.amount,
+      realMoneyAmount: 0,
+      currency: 'INR',
+      description: `Withdrawal refund - ${reason}`,
+      category: 'refund',
+      status: 'completed',
+      paymentMethod: 'wallet',
+      reference: `refund_${withdrawal._id}`,
+      balanceBefore: trainer.walletBalance - withdrawal.amount,
+      balanceAfter: trainer.walletBalance,
+      metadata: {
+        originalWithdrawal: withdrawal._id,
+        reason: reason
+      }
+    });
+    await refundTransaction.save();
+
+    console.log(`Admin ${user.email} rejected withdrawal ${withdrawal._id} and refunded ₹${withdrawal.realMoneyAmount}`);
+
+    res.json({
+      success: true,
+      message: 'Withdrawal rejected and amount refunded',
+      withdrawal,
+      refund: refundTransaction
+    });
+  } catch (err) {
+    console.error('Error rejecting withdrawal:', err.message);
     res.status(500).json({ message: 'Server error' });
   }
 });

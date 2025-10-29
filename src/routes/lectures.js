@@ -2,7 +2,10 @@ const express = require('express');
 const router = express.Router();
 const Lecture = require('../models/Lecture');
 const User = require('../models/User');
+const Transaction = require('../models/Transaction');
 const { auth } = require('../middleware/auth');
+const { COURSE_CREATION_COST, PLATFORM_FEE_PERCENTAGE } = require('../config/razorpay');
+const { sendEmail } = require('../services/emailService');
 
 /**
  * @route   GET /api/lectures
@@ -113,6 +116,15 @@ router.post('/', auth, async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Approved trainers only.' });
     }
 
+    // Check if trainer has enough UpCoins to create a lecture
+    if (user.walletBalance < COURSE_CREATION_COST) {
+      return res.status(400).json({ 
+        message: `Insufficient UpCoins. You need ${COURSE_CREATION_COST} UpCoins to create a lecture. Current balance: ${user.walletBalance} UpCoins`,
+        required: COURSE_CREATION_COST,
+        current: user.walletBalance
+      });
+    }
+
     const {
       title,
       description,
@@ -137,6 +149,33 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Scheduled time must be in the future' });
     }
 
+    // Deduct UpCoins from trainer's wallet
+    const currentBalance = user.walletBalance;
+    user.walletBalance -= COURSE_CREATION_COST;
+    user.totalSpent += COURSE_CREATION_COST;
+    await user.save();
+
+    // Create transaction record
+    const transaction = new Transaction({
+      user: user._id,
+      type: 'debit',
+      amount: COURSE_CREATION_COST,
+      realMoneyAmount: 0,
+      currency: 'INR',
+      description: `Created lecture: "${title}"`,
+      category: 'lecture_enrollment',
+      status: 'completed',
+      paymentMethod: 'wallet',
+      reference: `lecture_creation_${Date.now()}`,
+      balanceBefore: currentBalance,
+      balanceAfter: user.walletBalance,
+      metadata: {
+        lectureTitle: title,
+        action: 'course_creation'
+      }
+    });
+    await transaction.save();
+
     // Create new lecture
     const lecture = new Lecture({
       title,
@@ -157,9 +196,13 @@ router.post('/', auth, async (req, res) => {
     // Populate trainer info before sending response
     await lecture.populate('trainer', 'firstname lastname email avatar');
 
+    console.log(`Lecture created by ${user.email}. ${COURSE_CREATION_COST} UpCoins deducted. New balance: ${user.walletBalance}`);
+
     res.status(201).json({
-      message: 'Lecture created successfully',
-      lecture
+      message: `Lecture created successfully! ${COURSE_CREATION_COST} UpCoins deducted from your wallet.`,
+      lecture,
+      walletBalance: user.walletBalance,
+      upcoinsDeducted: COURSE_CREATION_COST
     });
   } catch (err) {
     console.error('Error creating lecture:', err.message);
@@ -306,7 +349,7 @@ router.post('/:id/enroll', auth, async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Students only.' });
     }
 
-    const lecture = await Lecture.findById(req.params.id);
+    const lecture = await Lecture.findById(req.params.id).populate('trainer');
     if (!lecture) {
       return res.status(404).json({ message: 'Lecture not found' });
     }
@@ -329,7 +372,82 @@ router.post('/:id/enroll', auth, async (req, res) => {
       return res.status(400).json({ message: 'Already enrolled in this lecture' });
     }
 
-    // Add student to enrolled list using updateOne to avoid validation
+    // Check if student has enough UpCoins
+    if (user.walletBalance < lecture.price) {
+      return res.status(400).json({ 
+        message: `Insufficient UpCoins. Required: ${lecture.price}, Current: ${user.walletBalance}`,
+        required: lecture.price,
+        current: user.walletBalance
+      });
+    }
+
+    // Calculate platform fee and trainer earnings
+    const platformFee = Math.floor((lecture.price * PLATFORM_FEE_PERCENTAGE) / 100);
+    const trainerEarnings = lecture.price - platformFee;
+
+    // Deduct UpCoins from student
+    const studentBalanceBefore = user.walletBalance;
+    user.walletBalance -= lecture.price;
+    user.totalSpent += lecture.price;
+    await user.save();
+
+    // Create student transaction
+    const studentTransaction = new Transaction({
+      user: user._id,
+      type: 'debit',
+      amount: lecture.price,
+      realMoneyAmount: 0,
+      currency: 'INR',
+      description: `Enrolled in "${lecture.title}"`,
+      category: 'lecture_enrollment',
+      status: 'completed',
+      paymentMethod: 'wallet',
+      reference: `enrollment_${lecture._id}`,
+      relatedLecture: lecture._id,
+      balanceBefore: studentBalanceBefore,
+      balanceAfter: user.walletBalance,
+      metadata: {
+        lectureTitle: lecture.title,
+        trainerId: lecture.trainer._id,
+        platformFee: platformFee
+      }
+    });
+    await studentTransaction.save();
+
+    // Credit trainer's wallet
+    const trainer = await User.findById(lecture.trainer._id);
+    const trainerBalanceBefore = trainer.walletBalance;
+    trainer.walletBalance += trainerEarnings;
+    trainer.totalEarned += trainerEarnings;
+    await trainer.save();
+
+    // Create trainer transaction
+    const trainerTransaction = new Transaction({
+      user: trainer._id,
+      type: 'credit',
+      amount: trainerEarnings,
+      realMoneyAmount: 0,
+      currency: 'INR',
+      description: `Earnings from "${lecture.title}" (${PLATFORM_FEE_PERCENTAGE}% platform fee deducted)`,
+      category: 'lecture_enrollment',
+      status: 'completed',
+      paymentMethod: 'wallet',
+      reference: `earnings_${lecture._id}`,
+      relatedLecture: lecture._id,
+      balanceBefore: trainerBalanceBefore,
+      balanceAfter: trainer.walletBalance,
+      metadata: {
+        lectureTitle: lecture.title,
+        studentId: user._id,
+        studentName: `${user.firstname} ${user.lastname}`,
+        platformFee: platformFee,
+        grossAmount: lecture.price,
+        netAmount: trainerEarnings
+      }
+    });
+    await trainerTransaction.save();
+
+    // Add student to enrolled list
     await Lecture.updateOne(
       { _id: req.params.id },
       { 
@@ -345,9 +463,15 @@ router.post('/:id/enroll', auth, async (req, res) => {
     // Get updated lecture for response
     const updatedLecture = await Lecture.findById(req.params.id);
 
+    console.log(`Student ${user.email} enrolled in "${lecture.title}". Paid: ${lecture.price} UC. Trainer earned: ${trainerEarnings} UC (${platformFee} UC platform fee)`);
+
     res.json({
       message: 'Successfully enrolled in lecture',
-      enrolledCount: updatedLecture.enrolledStudents.length
+      enrolledCount: updatedLecture.enrolledStudents.length,
+      walletBalance: user.walletBalance,
+      amountPaid: lecture.price,
+      trainerEarned: trainerEarnings,
+      platformFee: platformFee
     });
   } catch (err) {
     console.error('Error enrolling in lecture:', err.message);
@@ -679,6 +803,80 @@ router.get('/stats/overview', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('Error fetching lecture stats:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route   POST /api/lectures/:id/start-meeting
+ * @desc    Start meeting and notify enrolled students
+ * @access  Private (Trainer who created it)
+ */
+router.post('/:id/start-meeting', auth, async (req, res) => {
+  try {
+    const lecture = await Lecture.findById(req.params.id).populate('trainer', 'firstname lastname email');
+    
+    if (!lecture) {
+      return res.status(404).json({ message: 'Lecture not found' });
+    }
+
+    // Check if user is the trainer
+    if (lecture.trainer._id.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Only the trainer can start the meeting' });
+    }
+
+    // Update lecture status to live
+    lecture.status = 'live';
+    const meetingLink = `${process.env.FRONTEND_URL}/meeting/${lecture._id}`;
+    lecture.meetingLink = meetingLink;
+    await lecture.save();
+
+    // Get all enrolled students
+    const enrolledStudents = await User.find({
+      _id: { $in: lecture.enrolledStudents }
+    });
+
+    // Send email notifications to all enrolled students
+    const emailPromises = enrolledStudents.map(student => {
+      const emailTemplate = {
+        subject: `Live Lecture Started: ${lecture.title}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #4F46E5;">Live Lecture Started!</h2>
+            <p>Hi ${student.firstname},</p>
+            <p>The lecture "<strong>${lecture.title}</strong>" has started!</p>
+            <p><strong>Trainer:</strong> ${lecture.trainer.firstname} ${lecture.trainer.lastname}</p>
+            
+            <div style="margin: 30px 0; text-align: center;">
+              <a href="${meetingLink}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Join Meeting Now</a>
+            </div>
+            
+            <p style="color: #6b7280; font-size: 14px;">Or copy this link: <br><code style="background-color: #f3f4f6; padding: 4px 8px; border-radius: 4px;">${meetingLink}</code></p>
+            
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+            <p>Best regards,<br><strong>UpScholar Team</strong></p>
+          </div>
+        `
+      };
+
+      return sendEmail(student.email, emailTemplate).catch(err => {
+        console.error(`Failed to send email to ${student.email}:`, err);
+      });
+    });
+
+    await Promise.all(emailPromises);
+
+    console.log(`Meeting started for lecture: ${lecture.title}. Notified ${enrolledStudents.length} students.`);
+
+    res.json({
+      success: true,
+      message: `Meeting started! ${enrolledStudents.length} students notified.`,
+      meetingLink,
+      lecture
+    });
+
+  } catch (err) {
+    console.error('Error starting meeting:', err.message);
     res.status(500).json({ message: 'Server error' });
   }
 });

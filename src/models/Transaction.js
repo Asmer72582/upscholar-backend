@@ -16,6 +16,15 @@ const TransactionSchema = new mongoose.Schema({
     required: true,
     min: [0, 'Amount must be positive']
   },
+  realMoneyAmount: {
+    type: Number,
+    default: 0,
+    min: [0, 'Real money amount must be positive']
+  },
+  currency: {
+    type: String,
+    default: 'INR'
+  },
   description: {
     type: String,
     required: true,
@@ -23,7 +32,7 @@ const TransactionSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['lecture_enrollment', 'funds_added', 'refund', 'bonus', 'withdrawal'],
+    enum: ['lecture_enrollment', 'upcoin_purchase', 'refund', 'joining_bonus', 'withdrawal'],
     required: true
   },
   status: {
@@ -41,7 +50,7 @@ const TransactionSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['card', 'paypal', 'bank_transfer', 'wallet'],
+    enum: ['card', 'upi', 'netbanking', 'wallet', 'emi', 'paylater'],
     default: 'wallet'
   },
   paymentReference: {
