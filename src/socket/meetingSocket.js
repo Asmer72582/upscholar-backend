@@ -6,11 +6,20 @@ let io;
 const meetings = new Map();
 
 const initializeSocket = (server) => {
+  const allowedOrigins = [
+    process.env.FRONTEND_URL || 'http://localhost:8080',
+    'https://upscholar-ui-kit.vercel.app',
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+    'http://localhost:5173'
+  ];
+
   io = new Server(server, {
     cors: {
-      origin: process.env.FRONTEND_URL || 'http://localhost:8080',
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
-      credentials: true
+      credentials: true,
+      allowedHeaders: ['Content-Type', 'x-auth-token', 'Authorization']
     }
   });
 
