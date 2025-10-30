@@ -10,8 +10,14 @@ require('dotenv').config();
 const app = express();
 
 // CORS configuration
+const allowedOrigins = [
+    process.env.FRONTEND_URL || 'http://localhost:8080',
+    'http://127.0.0.1:8080',
+    'http://localhost:8080'
+];
+
 app.use(cors({
-    origin: ["http://localhost:8080", "http://127.0.0.1:8080"],
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'x-auth-token', 'Authorization'],
     exposedHeaders: ['x-auth-token'],

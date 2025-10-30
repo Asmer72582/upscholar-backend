@@ -1,10 +1,11 @@
 // This is a simple test script to manually test the authentication endpoints
 // You can run this with Node.js to test the API endpoints
 
+require('dotenv').config();
 const axios = require('axios');
 
-// API base URL
-const API_URL = 'http://localhost:3000/api';
+// API base URL from environment variable
+const API_URL = process.env.API_URL || 'http://localhost:3000/api';
 
 // Test user data
 const testUser = {
