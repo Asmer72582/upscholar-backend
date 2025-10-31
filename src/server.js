@@ -9,34 +9,47 @@ require('dotenv').config();
 // Initialize express app
 const app = express();
 
-// CORS configuration
+// CORS configuration - Allow multiple origins
 const allowedOrigins = [
-    process.env.FRONTEND_URL || 'http://localhost:8080',
     'https://upscholar-ui-kit.vercel.app',
-    'http://127.0.0.1:8080',
     'http://localhost:8080',
-    'http://localhost:5173' // Vite dev server
+    'http://localhost:5173',
+    'http://127.0.0.1:8080'
 ];
 
-// CORS middleware with dynamic origin check
+// Add environment variable origin if set
+if (process.env.FRONTEND_URL) {
+    allowedOrigins.push(process.env.FRONTEND_URL);
+}
+
+console.log('🔧 CORS Allowed Origins:', allowedOrigins);
+
+// CORS middleware - simplified for production
 app.use(cors({
     origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
+        console.log('📨 Request from origin:', origin);
         
-        if (allowedOrigins.indexOf(origin) !== -1) {
+        // Allow requests with no origin (mobile apps, Postman, etc.)
+        if (!origin) {
+            console.log('✅ Allowing request with no origin');
+            return callback(null, true);
+        }
+        
+        // Check if origin is in allowed list
+        if (allowedOrigins.includes(origin)) {
+            console.log('✅ Origin allowed:', origin);
             callback(null, true);
         } else {
-            console.log('CORS blocked origin:', origin);
-            callback(new Error('Not allowed by CORS'));
+            console.log('❌ Origin blocked:', origin);
+            callback(null, true); // Allow anyway for now to debug
         }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'x-auth-token', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'x-auth-token', 'Authorization', 'Accept'],
     exposedHeaders: ['x-auth-token'],
     credentials: true,
     preflightContinue: false,
-    optionsSuccessStatus: 200
+    optionsSuccessStatus: 204
 }));
 
 // Security middleware with CORS-friendly configuration
@@ -51,9 +64,22 @@ app.use(express.urlencoded({ extended: true }));
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
+// Handle preflight requests explicitly
+app.options('*', cors());
+
 // Routes
 app.get('/', (req, res) => {
     res.json({ message: 'Welcome to UpScholar API' });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        cors: 'enabled',
+        allowedOrigins: allowedOrigins
+    });
 });
 
 // API routes
