@@ -7,6 +7,7 @@ const path = require('path');
 require('dotenv').config();
 
 // Initialize express app
+// Updated: 2025-11-11 - Fixed path-to-regexp errors and route registration
 const app = express();
 
 // CORS configuration - Allow multiple origins
