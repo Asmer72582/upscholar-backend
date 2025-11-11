@@ -196,9 +196,8 @@ router.post('/pay', auth, async (req, res) => {
   }
 });
 
-module.exports = router;/**
- * @r
-oute   GET /api/wallet/stats
+/**
+ * @route   GET /api/wallet/stats
  * @desc    Get wallet statistics
  * @access  Private
  */

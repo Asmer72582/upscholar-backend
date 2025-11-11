@@ -64,8 +64,8 @@ app.use(express.urlencoded({ extended: true }));
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Handle preflight requests explicitly
-app.options('*', cors());
+// Handle preflight requests explicitly - removed wildcard for Express 5 compatibility
+// app.options('*', cors());
 
 // Routes
 app.get('/', (req, res) => {
