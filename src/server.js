@@ -27,15 +27,15 @@ console.log('🔧 CORS Allowed Origins:', allowedOrigins);
 
 // CORS middleware - simplified for production
 app.use(cors({
-    origin: function (origin, callback) {
+    origin: function(origin, callback) {
         console.log('📨 Request from origin:', origin);
-        
+
         // Allow requests with no origin (mobile apps, Postman, etc.)
         if (!origin) {
             console.log('✅ Allowing request with no origin');
             return callback(null, true);
         }
-        
+
         // Check if origin is in allowed list
         if (allowedOrigins.includes(origin)) {
             console.log('✅ Origin allowed:', origin);
@@ -75,8 +75,8 @@ app.get('/', (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
+    res.json({
+        status: 'ok',
         timestamp: new Date().toISOString(),
         cors: 'enabled',
         allowedOrigins: allowedOrigins

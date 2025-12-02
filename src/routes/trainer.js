@@ -826,14 +826,13 @@ router.put('/change-password', auth, async (req, res) => {
     }
 
     // Verify current password
-    const isMatch = await bcrypt.compare(currentPassword, trainer.password);
+    const isMatch = await trainer.comparePassword(currentPassword);
     if (!isMatch) {
       return res.status(400).json({ message: 'Current password is incorrect' });
     }
 
-    // Hash new password
-    const salt = await bcrypt.genSalt(10);
-    trainer.password = await bcrypt.hash(newPassword, salt);
+    // Set new password (pre-save hook will handle hashing)
+    trainer.password = newPassword;
     await trainer.save();
 
     res.json({ 

@@ -93,7 +93,7 @@ const UserSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected'],
+    enum: ['pending', 'approved', 'rejected', 'suspended', 'active'],
     default: function() {
       return this.role === 'trainer' ? 'pending' : 'approved';
     }
@@ -133,6 +133,29 @@ const UserSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'Total spent cannot be negative']
   },
+  // Suspension fields
+  suspensionReason: {
+    type: String,
+    required: false
+  },
+  suspendedAt: {
+    type: Date,
+    required: false
+  },
+  suspendedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: false
+  },
+  activatedAt: {
+    type: Date,
+    required: false
+  },
+  activatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: false
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -154,6 +177,9 @@ UserSchema.pre('save', async function(next) {
 
 // Method to compare password for login
 UserSchema.methods.comparePassword = async function(candidatePassword) {
+  if (!this.password) {
+    return false; // No password set
+  }
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
