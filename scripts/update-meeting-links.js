@@ -24,7 +24,7 @@ const updateMeetingLinks = async() => {
         let updatedCount = 0;
         for (const lecture of lecturesToUpdate) {
             const oldMeetingLink = lecture.meetingLink;
-            const newMeetingLink = oldMeetingLink.replace('http://localhost:8080', process.env.FRONTEND_URL || 'https://upscholar.in');
+            const newMeetingLink = oldMeetingLink.replace('http://localhost:8080', process.env.FRONTEND_URL || 'https://upscholar-ui-kit.vercel.app');
 
             lecture.meetingLink = newMeetingLink;
             await lecture.save();
@@ -51,10 +51,10 @@ const updateMeetingLinks = async() => {
             let newMeetingLink = oldMeetingLink;
 
             // Replace various localhost patterns
-            newMeetingLink = newMeetingLink.replace(/http:\/\/localhost:3000/g, process.env.FRONTEND_URL || 'https://upscholar.in');
-            newMeetingLink = newMeetingLink.replace(/http:\/\/localhost:5173/g, process.env.FRONTEND_URL || 'https://upscholar.in');
-            newMeetingLink = newMeetingLink.replace(/http:\/\/127\.0\.0\.1:8080/g, process.env.FRONTEND_URL || 'https://upscholar.in');
-            newMeetingLink = newMeetingLink.replace(/http:\/\/127\.0\.0\.1:8081/g, process.env.FRONTEND_URL || 'https://upscholar.in');
+            newMeetingLink = newMeetingLink.replace(/http:\/\/localhost:3000/g, process.env.FRONTEND_URL || 'https://upscholar-ui-kit.vercel.app');
+            newMeetingLink = newMeetingLink.replace(/http:\/\/localhost:5173/g, process.env.FRONTEND_URL || 'https://upscholar-ui-kit.vercel.app');
+            newMeetingLink = newMeetingLink.replace(/http:\/\/127\.0\.0\.1:8080/g, process.env.FRONTEND_URL || 'https://upscholar-ui-kit.vercel.app');
+            newMeetingLink = newMeetingLink.replace(/http:\/\/127\.0\.0\.1:8081/g, process.env.FRONTEND_URL || 'https://upscholar-ui-kit.vercel.app');
 
             if (newMeetingLink !== oldMeetingLink) {
                 lecture.meetingLink = newMeetingLink;

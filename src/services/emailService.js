@@ -3,18 +3,18 @@ require('dotenv').config();
 
 // Create transporter (using Gmail as example - you can change this)
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER || 'your-email@gmail.com',
-    pass: process.env.EMAIL_PASS || 'your-app-password'
-  }
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER || 'your-email@gmail.com',
+        pass: process.env.EMAIL_PASS || 'your-app-password'
+    }
 });
 
 // Email templates
 const emailTemplates = {
-  trainerApproval: (trainerName, email, tempPassword) => ({
-    subject: 'Welcome to Upscholer - Your Trainer Account is Approved!',
-    html: `
+        trainerApproval: (trainerName, email, tempPassword) => ({
+            subject: 'Welcome to Upscholer - Your Trainer Account is Approved!',
+            html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #2563eb;">Congratulations, ${trainerName}!</h2>
         <p>We're excited to inform you that your trainer application has been approved!</p>
@@ -45,11 +45,11 @@ const emailTemplates = {
         </p>
       </div>
     `
-  }),
+        }),
 
-  trainerRejection: (trainerName, email, reason) => ({
-    subject: 'Update on Your Upscholer Trainer Application',
-    html: `
+        trainerRejection: (trainerName, email, reason) => ({
+                    subject: 'Update on Your Upscholer Trainer Application',
+                    html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #dc2626;">Application Update</h2>
         <p>Dear ${trainerName},</p>
