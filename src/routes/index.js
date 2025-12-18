@@ -38,6 +38,9 @@ router.use('/trainer', require('./trainer'));
 // Payment routes
 router.use('/payment', require('./payment'));
 
+// Support routes
+router.use('/support', require('./support'));
+
 // Add more routes as needed
 
 module.exports = router;

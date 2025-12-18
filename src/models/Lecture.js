@@ -22,40 +22,15 @@ const LectureSchema = new mongoose.Schema({
         type: String,
         required: true,
         enum: [
-            // Basic 10th Class Subjects
-            'Mathematics',
-            'Science',
-            'Physics',
-            'Chemistry',
-            'Biology',
-            'English',
-            'Hindi',
-            'Social Studies',
-            'History',
-            'Geography',
-            'Civics',
-            'Economics',
-
-            // Additional Subjects
-            'Computer Science',
             'Programming',
             'Web Development',
             'Mobile Development',
             'Data Science',
             'Machine Learning',
-            'Artificial Intelligence',
             'DevOps',
             'Design',
             'Business',
             'Marketing',
-            'Accountancy',
-            'Business Studies',
-            'Commerce',
-            'Arts & Crafts',
-            'Music',
-            'Physical Education',
-            'Sanskrit',
-            'Other Languages',
             'Other'
         ]
     },
@@ -112,8 +87,8 @@ const LectureSchema = new mongoose.Schema({
     }],
     status: {
         type: String,
-        enum: ['pending', 'scheduled', 'live', 'completed', 'cancelled'],
-        default: 'pending'
+    enum: ['scheduled', 'live', 'completed', 'cancelled'],
+    default: 'scheduled'
     },
     meetingLink: {
         type: String,

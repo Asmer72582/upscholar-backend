@@ -841,7 +841,7 @@ router.post("/reset-password/:token", async(req, res) => {
             Your password has been successfully changed. You can now log in with your new password.
           </p>
           <p style="color: #666; line-height: 1.6; font-size: 14px; margin-top: 30px;">
-            If you didn't make this change, please contact us immediately.
+            If you didn't make this change, please contact our support team immediately.
           </p>
         </div>
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 0 0 8px 8px; text-align: center;">
@@ -921,7 +921,7 @@ router.post("/change-password", auth, async(req, res) => {
             Your password has been successfully changed.
           </p>
           <p style="color: #666; line-height: 1.6; font-size: 14px; margin-top: 30px;">
-            If you didn't make this change, please contact us immediately.
+            If you didn't make this change, please contact our support team immediately.
           </p>
         </div>
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 0 0 8px 8px; text-align: center;">
