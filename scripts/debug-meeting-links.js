@@ -36,7 +36,8 @@ const debugMeetingLinks = async() => {
             { pattern: /127\.0\.0\.1/, name: '127.0.0.1' }
         ];
 
-        for (const { pattern, name } of localhostPatterns) {
+        for (const { pattern, name }
+            of localhostPatterns) {
             const count = await Lecture.countDocuments({ meetingLink: { $regex: pattern } });
             console.log(`Lectures with ${name}: ${count}`);
         }
