@@ -7,7 +7,7 @@ echo "🧪 Testing Backend Endpoints on Localhost"
 echo "=========================================="
 echo ""
 
-BASE_URL="http://localhost:3000"
+BASE_URL="http://13.60.254.183:3000"
 
 # Color codes
 GREEN='\033[0;32m'
@@ -82,10 +82,10 @@ echo "Backend is running on: $BASE_URL"
 echo ""
 echo "To use this backend with your frontend:"
 echo "1. Update frontend .env file:"
-echo "   VITE_API_URL=http://localhost:3000/api"
+echo "   VITE_API_URL=http://13.60.254.183:3000/api"
 echo ""
 echo "2. Or update trainerService.ts:"
-echo "   const API_BASE_URL = 'http://localhost:3000/api';"
+echo "   const API_BASE_URL = 'http://13.60.254.183:3000/api';'"
 echo ""
 echo "3. Restart your frontend"
 echo ""

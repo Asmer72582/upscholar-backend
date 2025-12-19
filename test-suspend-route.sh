@@ -12,7 +12,7 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-BASE_URL="http://localhost:3000"
+BASE_URL="http://13.60.254.183:3000"
 
 # Check if server is running
 echo "1️⃣  Checking if server is running..."

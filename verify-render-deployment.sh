@@ -7,7 +7,7 @@ echo "🔍 Verifying Render Deployment..."
 echo "=================================="
 echo ""
 
-BASE_URL="https://upscholar-backend.onrender.com"
+BASE_URL="http://13.60.254.183:3000"
 
 # Test 1: Health Check
 echo "1️⃣  Testing Health Endpoint..."

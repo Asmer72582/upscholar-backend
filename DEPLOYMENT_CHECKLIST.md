@@ -23,8 +23,8 @@ PORT=3000
 MONGO_URI=<your_mongodb_connection_string>
 JWT_SECRET=<your_jwt_secret>
 FRONTEND_URL=https://upscholar-ui-kit.vercel.app
-API_BASE_URL=https://upscholar-backend.onrender.com
-API_URL=https://upscholar-backend.onrender.com/api
+API_BASE_URL=http://13.60.254.183:3000
+API_URL=http://13.60.254.183:3000/api
 EMAIL_USER=<your_email>
 EMAIL_PASS=<your_email_app_password>
 RAZORPAY_KEY_ID=<your_razorpay_key>
@@ -38,29 +38,29 @@ Test these endpoints after deployment:
 
 #### Health Check
 ```bash
-curl https://upscholar-backend.onrender.com/health
+curl http://13.60.254.183:3000/health
 # Expected: {"status":"ok",...}
 ```
 
 #### Payment Packages (Public)
 ```bash
-curl https://upscholar-backend.onrender.com/api/payment/packages
+curl http://13.60.254.183:3000/api/payment/packages
 # Expected: {"success":true,"packages":[...]}
 ```
 
 #### Trainer Routes (Requires Auth)
 ```bash
-curl https://upscholar-backend.onrender.com/api/trainer/students
+curl http://13.60.254.183:3000/api/trainer/students
 # Expected: 401 or {"message":"No token, authorization denied"}
 # (401 means route exists but needs authentication)
 
-curl https://upscholar-backend.onrender.com/api/trainer/students/course-stats
+curl http://13.60.254.183:3000/api/trainer/students/course-stats
 # Expected: 401 or {"message":"No token, authorization denied"}
 ```
 
 #### Admin Routes (Requires Auth)
 ```bash
-curl https://upscholar-backend.onrender.com/api/admin/withdrawals?status=pending
+curl http://13.60.254.183:3000/api/admin/withdrawals?status=pending
 # Expected: 401 or {"message":"No token, authorization denied"}
 ```
 
@@ -90,10 +90,10 @@ curl https://upscholar-backend.onrender.com/api/admin/withdrawals?status=pending
 npm start
 
 # Test endpoints
-curl http://localhost:3000/health
-curl http://localhost:3000/api/payment/packages
-curl http://localhost:3000/api/trainer/students
-curl http://localhost:3000/api/trainer/students/course-stats
+curl http://13.60.254.183:3000/health
+curl http://13.60.254.183:3000/api/payment/packages
+curl http://13.60.254.183:3000/api/trainer/students
+curl http://13.60.254.183:3000/api/trainer/students/course-stats
 ```
 
 ## 🔍 Monitoring

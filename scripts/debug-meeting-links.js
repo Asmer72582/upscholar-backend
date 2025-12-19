@@ -33,7 +33,8 @@ const debugMeetingLinks = async() => {
             { pattern: /localhost:8080/, name: 'localhost:8080' },
             { pattern: /localhost:3000/, name: 'localhost:3000' },
             { pattern: /localhost:5173/, name: 'localhost:5173' },
-            { pattern: /127\.0\.0\.1/, name: '127.0.0.1' }
+            { pattern: /127\.0\.0\.1/, name: '127.0.0.1' },
+            { pattern: /13\.60\.254\.183:3000/, name: '13.60.254.183:3000' }
         ];
 
         for (const { pattern, name }

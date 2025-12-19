@@ -85,7 +85,8 @@ const updateMeetingLinks = async() => {
             $or: [
                 { meetingLink: { $regex: /localhost:3000/ } },
                 { meetingLink: { $regex: /localhost:5173/ } },
-                { meetingLink: { $regex: /127\.0\.0\.1/ } }
+                { meetingLink: { $regex: /127\.0\.0\.1/ } },
+                { meetingLink: { $regex: /13\.60\.254\.183:3000/ } }
             ]
         });
 
@@ -100,6 +101,7 @@ const updateMeetingLinks = async() => {
             newMeetingLink = newMeetingLink.replace(/http:\/\/localhost:5173/g, vercelUrl);
             newMeetingLink = newMeetingLink.replace(/http:\/\/127\.0\.0\.1:8080/g, vercelUrl);
             newMeetingLink = newMeetingLink.replace(/http:\/\/127\.0\.0\.1:8081/g, vercelUrl);
+            newMeetingLink = newMeetingLink.replace(/http:\/\/13\.60\.254\.183:3000/g, vercelUrl);
 
             if (newMeetingLink !== oldMeetingLink) {
                 lecture.meetingLink = newMeetingLink;
