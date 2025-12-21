@@ -10,6 +10,8 @@ require('dotenv').config();
 // Updated: 2025-11-11 - Fixed path-to-regexp errors and route registration
 const app = express();
 
+
+
 // CORS configuration - Allow multiple origins
 const allowedOrigins = [
     'https://upscholar-ui-kit.vercel.app',
@@ -54,6 +56,36 @@ app.use(cors({
     optionsSuccessStatus: 204
 }));
 
+// Trust proxy - IMPORTANT for nginx reverse proxy and SSL
+app.set('trust proxy', true);
+
+// HTTPS redirect middleware - respects proxy headers
+app.use((req, res, next) => {
+    // Check if request is secure (handles both direct HTTPS and proxied requests)
+    const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+
+    console.log('🔒 SSL Check:', {
+        secure: req.secure,
+        protocol: req.protocol,
+        'x-forwarded-proto': req.headers['x-forwarded-proto'],
+        isSecure: isSecure,
+        url: req.url
+    });
+
+    // Skip redirect for health checks and local development
+    if (req.url === '/health' || req.url === '/' || process.env.NODE_ENV === 'development') {
+        return next();
+    }
+
+    // Redirect to HTTPS if not secure
+    if (!isSecure) {
+        console.log('🔄 Redirecting to HTTPS:', req.url);
+        return res.redirect(301, 'https://' + req.headers.host + req.url);
+    }
+
+    next();
+});
+
 // Security middleware with CORS-friendly configuration
 app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -74,13 +106,25 @@ app.get('/', (req, res) => {
     res.json({ message: 'Welcome to UpScholar API' });
 });
 
-// Health check endpoint
+// Health check endpoint with SSL status
 app.get('/health', (req, res) => {
+    const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
         cors: 'enabled',
-        allowedOrigins: allowedOrigins
+        allowedOrigins: allowedOrigins,
+        ssl: {
+            secure: req.secure,
+            protocol: req.protocol,
+            'x-forwarded-proto': req.headers['x-forwarded-proto'],
+            isSecure: isSecure
+        },
+        proxy: {
+            trusted: app.get('trust proxy'),
+            ip: req.ip,
+            ips: req.ips
+        }
     });
 });
 
