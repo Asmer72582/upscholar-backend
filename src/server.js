@@ -59,32 +59,8 @@ app.use(cors({
 // Trust proxy - IMPORTANT for nginx reverse proxy and SSL
 app.set('trust proxy', true);
 
-// HTTPS redirect middleware - respects proxy headers
-app.use((req, res, next) => {
-    // Check if request is secure (handles both direct HTTPS and proxied requests)
-    const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
-
-    console.log('🔒 SSL Check:', {
-        secure: req.secure,
-        protocol: req.protocol,
-        'x-forwarded-proto': req.headers['x-forwarded-proto'],
-        isSecure: isSecure,
-        url: req.url
-    });
-
-    // Skip redirect for health checks and local development
-    if (req.url === '/health' || req.url === '/' || process.env.NODE_ENV === 'development') {
-        return next();
-    }
-
-    // Redirect to HTTPS if not secure
-    if (!isSecure) {
-        console.log('🔄 Redirecting to HTTPS:', req.url);
-        return res.redirect(301, 'https://' + req.headers.host + req.url);
-    }
-
-    next();
-});
+// IMPORTANT: HTTPS redirects are handled by Nginx, not Node.js
+// This prevents redirect loops when using reverse proxy
 
 // Security middleware with CORS-friendly configuration
 app.use(helmet({
@@ -106,7 +82,7 @@ app.get('/', (req, res) => {
     res.json({ message: 'Welcome to UpScholar API' });
 });
 
-// Health check endpoint with SSL status
+// Health check endpoint with proxy status
 app.get('/health', (req, res) => {
     const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
     res.json({
@@ -114,17 +90,15 @@ app.get('/health', (req, res) => {
         timestamp: new Date().toISOString(),
         cors: 'enabled',
         allowedOrigins: allowedOrigins,
-        ssl: {
-            secure: req.secure,
+        proxy: {
+            trusted: app.get('trust proxy'),
+            ip: req.ip,
+            ips: req.ips,
             protocol: req.protocol,
             'x-forwarded-proto': req.headers['x-forwarded-proto'],
             isSecure: isSecure
         },
-        proxy: {
-            trusted: app.get('trust proxy'),
-            ip: req.ip,
-            ips: req.ips
-        }
+        note: 'HTTPS redirects handled by Nginx reverse proxy'
     });
 });
 
