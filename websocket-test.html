@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 WebSocket Connection Test</h1>
+        <p>This page tests the WebSocket connection to your meeting room server.</p>
+        
+        <div class="test-section">
+            <h3>1. Socket.io Connection Test</h3>
+            <button onclick="testSocketIO()">Test Socket.io Connection</button>
+            <button onclick="clearLogs()">Clear Logs</button>
+            <div id="socketio-status" class="status info">Click the button to test connection</div>
+            <div id="socketio-log" class="log"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>2. Direct WebSocket Test</h3>
+            <button onclick="testDirectWebSocket()">Test Direct WebSocket</button>
+            <div id="websocket-status" class="status info">Click the button to test WebSocket</div>
+            <div id="websocket-log" class="log"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>3. Connection Diagnostics</h3>
+            <div id="diagnostics" class="log"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <script>
+        const SOCKET_URL = 'https://api.upscholar.in';
+        
+        function log(elementId, message, type = 'info') {
+            const logElement = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        function clearLogs() {
+            document.getElementById('socketio-log').innerHTML = '';
+            document.getElementById('websocket-log').innerHTML = '';
+            document.getElementById('socketio-status').className = 'status info';
+            document.getElementById('socketio-status').textContent = 'Click the button to test connection';
+            document.getElementById('websocket-status').className = 'status info';
+            document.getElementById('websocket-status').textContent = 'Click the button to test WebSocket';
+        }
+        
+        function testSocketIO() {
+            const statusElement = document.getElementById('socketio-status');
+            const logElement = document.getElementById('socketio-log');
+            
+            statusElement.className = 'status info';
+            statusElement.textContent = 'Connecting...';
+            log('socketio-log', 'Starting Socket.io connection test...');
+            
+            try {
+                const socket = io(SOCKET_URL, {
+                    transports: ['websocket', 'polling'],
+                    timeout: 10000,
+                    forceNew: true,
+                    reconnection: false
+                });
+                
+                socket.on('connect', () => {
+                    log('socketio-log', `✅ Connected successfully! Socket ID: ${socket.id}`, 'success');
+                    statusElement.className = 'status success';
+                    statusElement.textContent = '✅ Connected Successfully!';
+                    socket.disconnect();
+                });
+                
+                socket.on('connect_error', (error) => {
+                    log('socketio-log', `❌ Connection error: ${error.message}`, 'error');
+                    log('socketio-log', `Error type: ${error.type}`, 'error');
+                    statusElement.className = 'status error';
+                    statusElement.textContent = '❌ Connection Failed';
+                });
+                
+                socket.on('error', (error) => {
+                    log('socketio-log', `❌ Socket error: ${error}`, 'error');
+                    statusElement.className = 'status error';
+                    statusElement.textContent = '❌ Socket Error';
+                });
+                
+                socket.on('reconnect_attempt', (attempt) => {
+                    log('socketio-log', `🔄 Reconnection attempt: ${attempt}`, 'info');
+                });
+                
+                // Transport change detection
+                socket.io.on('upgrade', (transport) => {
+                    log('socketio-log', `🚀 Transport upgraded to: ${transport.name}`, 'success');
+                });
+                
+                socket.io.on('downgrade', (transport) => {
+                    log('socketio-log', `📉 Transport downgraded to: ${transport.name}`, 'info');
+                });
+                
+                // Timeout
+                setTimeout(() => {
+                    if (socket.connected) {
+                        log('socketio-log', '✅ Connection established and stable', 'success');
+                        socket.disconnect();
+                    } else {
+                        log('socketio-log', '⏰ Connection timeout - no connection established', 'error');
+                        statusElement.className = 'status error';
+                        statusElement.textContent = '⏰ Connection Timeout';
+                    }
+                }, 15000);
+                
+            } catch (error) {
+                log('socketio-log', `❌ Test failed: ${error.message}`, 'error');
+                statusElement.className = 'status error';
+                statusElement.textContent = '❌ Test Failed';
+            }
+        }
+        
+        function testDirectWebSocket() {
+            const statusElement = document.getElementById('websocket-status');
+            const logElement = document.getElementById('websocket-log');
+            
+            statusElement.className = 'status info';
+            statusElement.textContent = 'Connecting...';
+            log('websocket-log', 'Starting direct WebSocket test...');
+            
+            try {
+                // Test direct WebSocket connection to socket.io endpoint
+                const ws = new WebSocket('wss://api.upscholar.in/socket.io/?EIO=4&transport=websocket');
+                
+                ws.onopen = () => {
+                    log('websocket-log', '✅ WebSocket connection opened successfully!', 'success');
+                    statusElement.className = 'status success';
+                    statusElement.textContent = '✅ WebSocket Connected!';
+                    ws.close();
+                };
+                
+                ws.onerror = (error) => {
+                    log('websocket-log', `❌ WebSocket error: ${error}`, 'error');
+                    statusElement.className = 'status error';
+                    statusElement.textContent = '❌ WebSocket Error';
+                };
+                
+                ws.onclose = (event) => {
+                    log('websocket-log', `🔌 WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`, 'info');
+                };
+                
+                ws.onmessage = (event) => {
+                    log('websocket-log', `📨 Message received: ${event.data}`, 'info');
+                };
+                
+                // Timeout
+                setTimeout(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        log('websocket-log', '✅ WebSocket connection stable', 'success');
+                        ws.close();
+                    } else {
+                        log('websocket-log', '⏰ WebSocket connection timeout', 'error');
+                        statusElement.className = 'status error';
+                        statusElement.textContent = '⏰ WebSocket Timeout';
+                    }
+                }, 10000);
+                
+            } catch (error) {
+                log('websocket-log', `❌ WebSocket test failed: ${error.message}`, 'error');
+                statusElement.className = 'status error';
+                statusElement.textContent = '❌ WebSocket Test Failed';
+            }
+        }
+        
+        // Run diagnostics
+        function runDiagnostics() {
+            const diagnostics = document.getElementById('diagnostics');
+            diagnostics.innerHTML = '<h4>Connection Diagnostics:</h4>';
+            
+            // Check browser support
+            diagnostics.innerHTML += `<div>WebSocket Support: ${typeof WebSocket !== 'undefined' ? '✅ Available' : '❌ Not Available'}</div>`;
+            diagnostics.innerHTML += `<div>Socket.io Available: ${typeof io !== 'undefined' ? '✅ Available' : '❌ Not Available'}</div>`;
+            
+            // Check protocol
+            diagnostics.innerHTML += `<div>Current Protocol: ${window.location.protocol}</div>`;
+            diagnostics.innerHTML += `<div>Socket URL: ${SOCKET_URL}</div>`;
+            
+            // Check network status
+            diagnostics.innerHTML += `<div>Network Status: ${navigator.onLine ? '✅ Online' : '❌ Offline'}</div>`;
+            
+            // Check browser version
+            diagnostics.innerHTML += `<div>User Agent: ${navigator.userAgent}</div>`;
+        }
+        
+        // Run diagnostics on page load
+        window.onload = () => {
+            runDiagnostics();
+        };
+    </script>
+</body>
+</html>
