@@ -133,6 +133,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 // Initialize Socket.io for real-time meeting
 const { initializeSocket } = require('./socket/meetingSocket');
 initializeSocket(server);
+
 console.log('Socket.io initialized for meeting system');
 
 module.exports = app;
