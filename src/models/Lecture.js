@@ -22,15 +22,43 @@ const LectureSchema = new mongoose.Schema({
         type: String,
         required: true,
         enum: [
+            // Basic 10th Class Subjects
+            'Mathematics',
+            'Science',
+            'Physics',
+            'Chemistry',
+            'Biology',
+            'English',
+            'Hindi',
+            'Social Studies',
+            'History',
+            'Geography',
+            'Civics',
+            'Economics',
+            // Tech & Development
+            'Computer Science',
             'Programming',
             'Web Development',
             'Mobile Development',
             'Data Science',
             'Machine Learning',
+            'Artificial Intelligence',
             'DevOps',
             'Design',
+            // Business & Commerce
+            'Accountancy',
+            'Business Studies',
             'Business',
+            'Commerce',
             'Marketing',
+            // Other subjects
+            'Arts & Crafts',
+            'Music',
+            'Physical Education',
+            'Sanskrit',
+            'Other Languages',
+            'Competitive Exams',
+            'Test Preparation',
             'Other'
         ]
     },
@@ -87,8 +115,27 @@ const LectureSchema = new mongoose.Schema({
     }],
     status: {
         type: String,
-    enum: ['scheduled', 'live', 'completed', 'cancelled'],
-    default: 'scheduled'
+        enum: ['pending', 'scheduled', 'live', 'completed', 'cancelled'],
+        default: 'pending'
+    },
+    // Admin approval tracking
+    approvedAt: {
+        type: Date
+    },
+    approvedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    rejectedAt: {
+        type: Date
+    },
+    rejectedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    rejectionReason: {
+        type: String,
+        maxlength: 500
     },
     meetingLink: {
         type: String,

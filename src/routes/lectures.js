@@ -24,8 +24,9 @@ router.get('/', async(req, res) => {
             limit = 20
         } = req.query;
 
-        // Build filter query - only show scheduled lectures to students
-        let query = { isPublished: true, status: 'scheduled' };
+        // Build filter query - only show scheduled/live (approved) lectures to students
+        // Pending and cancelled lectures are hidden from students
+        let query = { isPublished: true, status: { $in: ['scheduled', 'live'] } };
 
         if (category && category !== 'all') {
             query.category = category;
@@ -763,7 +764,7 @@ router.get('/stats/overview', auth, async(req, res) => {
 
 /**
  * @route   POST /api/lectures/:id/start-meeting
- * @desc    Start meeting and notify enrolled students
+ * @desc    Start meeting and notify enrolled students (Using GetStream.io Video)
  * @access  Private (Trainer who created it)
  */
 router.post('/:id/start-meeting', auth, async(req, res) => {
@@ -785,9 +786,29 @@ router.post('/:id/start-meeting', auth, async(req, res) => {
         lecture.meetingLink = meetingLink;
         await lecture.save();
 
-        // Get all enrolled students
+        // Create Stream call if Stream is configured
+        try {
+            const streamService = require('../services/streamService');
+            if (streamService.isConfigured()) {
+                await streamService.createOrGetCall(lecture._id.toString(), {
+                    createdBy: req.user.id,
+                    title: lecture.title,
+                    description: lecture.description,
+                    lectureId: lecture._id.toString()
+                });
+                console.log(`Stream call created for lecture: ${lecture._id}`);
+            }
+        } catch (streamError) {
+            console.warn('Stream call creation failed (non-critical):', streamError.message);
+        }
+
+        // Get all enrolled students - handle both array of objects and array of IDs
+        const studentIds = lecture.enrolledStudents.map(enrollment => 
+            enrollment.student ? enrollment.student : enrollment
+        );
+        
         const enrolledStudents = await User.find({
-            _id: { $in: lecture.enrolledStudents }
+            _id: { $in: studentIds }
         });
 
         // Send email notifications to all enrolled students
@@ -820,13 +841,14 @@ router.post('/:id/start-meeting', auth, async(req, res) => {
 
         await Promise.all(emailPromises);
 
-        console.log(`Meeting started for lecture: ${lecture.title}. Notified ${enrolledStudents.length} students.`);
+        console.log(`Meeting started for lecture: ${lecture.title}. Notified ${enrolledStudents.length} students. Using GetStream.io Video.`);
 
         res.json({
             success: true,
             message: `Meeting started! ${enrolledStudents.length} students notified.`,
             meetingLink,
-            lecture
+            lecture,
+            videoProvider: 'getstream'
         });
 
     } catch (err) {

@@ -165,43 +165,61 @@ router.post('/verify', auth, async(req, res) => {
         // Mark payment as successful
         await payment.markAsSuccess(razorpay_payment_id, razorpay_signature, paymentMethod);
 
-        // Credit UpCoins to user's wallet
+        // Find the package to get bonus coins
+        const selectedPackage = UPCOIN_PACKAGES.find(pkg => pkg.id === payment.packageId);
+        const totalCoins = selectedPackage ? selectedPackage.totalCoins : payment.upcoins;
+        const bonusCoins = selectedPackage ? selectedPackage.bonusCoins : 0;
+
+        // Credit UpCoins (including bonus) to user's wallet
         const user = await User.findById(req.user.id);
-        user.walletBalance += payment.upcoins;
-        user.totalEarned += payment.upcoins;
+        user.walletBalance += totalCoins;
+        user.totalEarned += totalCoins;
         await user.save();
 
         // Create transaction record
+        const bonusDescription = bonusCoins > 0 
+            ? `Purchased ${payment.upcoins} UpCoins + ${bonusCoins} bonus for ₹${payment.amount}`
+            : `Purchased ${totalCoins} UpCoins for ₹${payment.amount}`;
+        
         const transaction = new Transaction({
             user: user._id,
             type: 'credit',
-            amount: payment.upcoins,
+            amount: totalCoins,
             realMoneyAmount: payment.amount,
             currency: payment.currency,
-            description: `Purchased ${payment.upcoins} UpCoins for ₹${payment.amount}`,
+            description: bonusDescription,
             category: 'upcoin_purchase',
             status: 'completed',
             paymentMethod: paymentMethod,
             reference: razorpay_payment_id,
-            balanceBefore: user.walletBalance - payment.upcoins,
+            balanceBefore: user.walletBalance - totalCoins,
             balanceAfter: user.walletBalance,
             metadata: {
                 paymentId: payment._id,
                 razorpayPaymentId: razorpay_payment_id,
                 razorpayOrderId: razorpay_order_id,
                 packageId: payment.packageId,
+                baseCoins: payment.upcoins,
+                bonusCoins: bonusCoins,
+                totalCoins: totalCoins,
                 amountPaid: payment.amount,
                 currency: payment.currency
             }
         });
         await transaction.save();
 
+        const successMessage = bonusCoins > 0
+            ? `Successfully purchased ${payment.upcoins} + ${bonusCoins} bonus UpCoins!`
+            : `Successfully purchased ${totalCoins} UpCoins!`;
+
         res.json({
             success: true,
-            message: `Successfully purchased ${payment.upcoins} UpCoins!`,
+            message: successMessage,
             payment: {
                 id: payment._id,
                 upcoins: payment.upcoins,
+                bonusCoins: bonusCoins,
+                totalCoins: totalCoins,
                 amount: payment.amount,
                 status: payment.status
             },

@@ -41,6 +41,9 @@ router.use('/payment', require('./payment'));
 // Support routes
 router.use('/support', require('./support'));
 
+// Stream Video routes (GetStream.io)
+router.use('/stream', require('./stream'));
+
 // Add more routes as needed
 
 module.exports = router;

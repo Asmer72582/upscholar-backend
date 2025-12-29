@@ -51,6 +51,7 @@ router.get('/stats/overview', auth, async(req, res) => {
             activeLectures,
             completedLectures,
             scheduledLectures,
+            pendingLectures,
             newLecturesThisMonth,
             newLecturesLastMonth
         ] = await Promise.all([
@@ -58,6 +59,7 @@ router.get('/stats/overview', auth, async(req, res) => {
             Lecture.countDocuments({ status: { $in: ['scheduled', 'live'] } }),
             Lecture.countDocuments({ status: 'completed' }),
             Lecture.countDocuments({ status: 'scheduled' }),
+            Lecture.countDocuments({ status: 'pending' }),
             Lecture.countDocuments({ createdAt: { $gte: lastMonth } }),
             Lecture.countDocuments({
                 createdAt: {
@@ -141,6 +143,7 @@ router.get('/stats/overview', auth, async(req, res) => {
                 active: activeLectures,
                 completed: completedLectures,
                 scheduled: scheduledLectures,
+                pending: pendingLectures,
                 growth: lectureGrowthRate,
                 newThisMonth: newLecturesThisMonth
             },
@@ -253,9 +256,9 @@ router.get('/stats/pending-approvals', auth, async(req, res) => {
             isApproved: false
         }).sort({ createdAt: -1 });
 
-        // Get recently created lectures that might need review
-        const recentLectures = await Lecture.find({
-            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // Last 24 hours
+        // Get pending lectures awaiting approval
+        const pendingLectures = await Lecture.find({
+            status: 'pending'
         }).populate('trainer', 'firstname lastname').sort({ createdAt: -1 });
 
         const approvals = [];
@@ -273,13 +276,13 @@ router.get('/stats/pending-approvals', auth, async(req, res) => {
             });
         });
 
-        // Add lecture reviews (for recently created lectures)
-        recentLectures.forEach(lecture => {
+        // Add pending lecture approvals
+        pendingLectures.forEach(lecture => {
             approvals.push({
                 id: lecture._id,
                 type: 'Lecture',
                 name: lecture.title,
-                item: 'Content review',
+                item: 'Pending approval',
                 trainer: `${lecture.trainer.firstname} ${lecture.trainer.lastname}`,
                 createdAt: lecture.createdAt,
                 data: lecture
