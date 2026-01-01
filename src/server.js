@@ -79,7 +79,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Routes
 app.get('/', (req, res) => {
-    res.json({ message: 'Welcome to UpScholar API' });
+    res.json({ message: 'Welcome to Upscholar API' });
 });
 
 // Health check endpoint with proxy status

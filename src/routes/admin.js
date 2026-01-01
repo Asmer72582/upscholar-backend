@@ -489,12 +489,12 @@ router.post('/users/:userId/suspend', auth, async(req, res) => {
         // Send email notification
         try {
             await sendEmail(user.email, {
-                subject: 'Account Suspension Notification - UpScholar',
+                subject: 'Account Suspension Notification - Upscholar',
                 html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #dc2626;">Account Suspension Notification</h2>
             <p>Dear ${user.firstname} ${user.lastname},</p>
-            <p>We regret to inform you that your UpScholar account has been suspended.</p>
+            <p>We regret to inform you that your Upscholar account has been suspended.</p>
             
             <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 15px; margin: 20px 0;">
               <h3 style="margin-top: 0; color: #991b1b;">Reason for Suspension:</h3>
@@ -511,7 +511,7 @@ router.post('/users/:userId/suspend', auth, async(req, res) => {
             <p>If you believe this is a mistake or would like to appeal this decision, please contact us.</p>
             
             <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e7eb;">
-            <p style="color: #6b7280; font-size: 14px;">Best regards,<br>UpScholar Admin Team</p>
+            <p style="color: #6b7280; font-size: 14px;">Best regards,<br>Upscholar Admin Team</p>
           </div>
         `
             });
@@ -571,12 +571,12 @@ router.post('/users/:userId/activate', auth, async(req, res) => {
         // Send email notification
         try {
             await sendEmail(user.email, {
-                subject: 'Account Reactivated - Welcome Back to UpScholar',
+                subject: 'Account Reactivated - Welcome Back to Upscholar',
                 html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #16a34a;">Account Reactivated - Welcome Back!</h2>
             <p>Dear ${user.firstname} ${user.lastname},</p>
-            <p>Good news! Your UpScholar account has been reactivated.</p>
+            <p>Good news! Your Upscholar account has been reactivated.</p>
             
             <div style="background-color: #dcfce7; border-left: 4px solid #16a34a; padding: 15px; margin: 20px 0;">
               <h3 style="margin-top: 0; color: #15803d;">You can now:</h3>
@@ -597,7 +597,7 @@ router.post('/users/:userId/activate', auth, async(req, res) => {
             </p>
             
             <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e7eb;">
-            <p style="color: #6b7280; font-size: 14px;">Welcome back!<br>UpScholar Team</p>
+            <p style="color: #6b7280; font-size: 14px;">Welcome back!<br>Upscholar Team</p>
           </div>
         `
             });
@@ -807,7 +807,7 @@ router.put('/lectures/:id/approve', auth, async(req, res) => {
         // Send email notification to trainer
         try {
             await sendEmail(lecture.trainer.email, {
-                subject: 'Lecture Approved - UpScholar',
+                subject: 'Lecture Approved - Upscholar',
                 html: `
                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                         <h2 style="color: #16a34a;">Lecture Approved!</h2>
@@ -831,7 +831,7 @@ router.put('/lectures/:id/approve', auth, async(req, res) => {
                         </p>
                         
                         <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e7eb;">
-                        <p style="color: #6b7280; font-size: 14px;">Best regards,<br>UpScholar Team</p>
+                        <p style="color: #6b7280; font-size: 14px;">Best regards,<br>Upscholar Team</p>
                     </div>
                 `
             });
@@ -890,7 +890,7 @@ router.put('/lectures/:id/reject', auth, async(req, res) => {
         // Send email notification to trainer
         try {
             await sendEmail(lecture.trainer.email, {
-                subject: 'Lecture Rejected - UpScholar',
+                subject: 'Lecture Rejected - Upscholar',
                 html: `
                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                         <h2 style="color: #dc2626;">Lecture Rejected</h2>
@@ -906,7 +906,7 @@ router.put('/lectures/:id/reject', auth, async(req, res) => {
                         <p>Please review the rejection reason and feel free to create a new lecture that meets our guidelines.</p>
                         
                         <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e7eb;">
-                        <p style="color: #6b7280; font-size: 14px;">Best regards,<br>UpScholar Team</p>
+                        <p style="color: #6b7280; font-size: 14px;">Best regards,<br>Upscholar Team</p>
                     </div>
                 `
             });

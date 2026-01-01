@@ -7,6 +7,7 @@ const upload = require("../middleware/upload");
 const { sendEmail, emailTemplates } = require("../services/emailService");
 const { generateTempPassword } = require("../utils/passwordGenerator");
 const { JOINING_BONUS } = require("../config/razorpay");
+const { sendOTP, verifyOTP, checkIPRegistration, getClientIP } = require("../services/otpService");
 const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 
@@ -34,8 +35,110 @@ router.options("/login", (req, res) => {
 });
 
 /**
+ * @route   POST /api/auth/send-otp
+ * @desc    Send OTP to email for verification
+ * @access  Public
+ */
+router.post("/send-otp", async(req, res) => {
+    try {
+        const { email, mobile } = req.body;
+
+        // Validate email
+        if (!email) {
+            return res.status(400).json({ message: "Email is required" });
+        }
+
+        // Validate email format
+        const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ message: "Please provide a valid email address" });
+        }
+
+        // Validate mobile if provided
+        if (mobile) {
+            const mobileRegex = /^[6-9]\d{9}$/;
+            if (!mobileRegex.test(mobile)) {
+                return res.status(400).json({ message: "Please provide a valid 10-digit Indian mobile number" });
+            }
+
+            // Check if mobile number is already registered
+            const existingMobileUser = await User.findOne({ mobile });
+            if (existingMobileUser) {
+                return res.status(400).json({ message: "An account already exists with this mobile number" });
+            }
+        }
+
+        // Check if email is already registered
+        const existingUser = await User.findOne({ email: email.toLowerCase() });
+        if (existingUser) {
+            return res.status(400).json({ message: "An account already exists with this email" });
+        }
+
+        // Get client IP
+        const ipAddress = getClientIP(req);
+
+        // Check if IP has already registered an account
+        const ipCheck = await checkIPRegistration(ipAddress);
+        if (ipCheck.exists) {
+            return res.status(400).json({
+                message: "Only one account can be created per IP address. An account already exists from this IP."
+            });
+        }
+
+        // Send OTP
+        const result = await sendOTP(email, mobile, ipAddress, 'registration');
+
+        if (!result.success) {
+            return res.status(400).json({ message: result.message });
+        }
+
+        res.json({
+            success: true,
+            message: result.message,
+            expiresIn: result.expiresIn
+        });
+    } catch (error) {
+        console.error("Error in send-otp route:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+/**
+ * @route   POST /api/auth/verify-otp
+ * @desc    Verify OTP before registration
+ * @access  Public
+ */
+router.post("/verify-otp", async(req, res) => {
+    try {
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            return res.status(400).json({ message: "Email and OTP are required" });
+        }
+
+        // Get client IP
+        const ipAddress = getClientIP(req);
+
+        // Verify OTP
+        const result = await verifyOTP(email, otp, ipAddress, 'registration');
+
+        if (!result.success) {
+            return res.status(400).json({ message: result.message });
+        }
+
+        res.json({
+            success: true,
+            message: result.message
+        });
+    } catch (error) {
+        console.error("Error in verify-otp route:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+/**
  * @route   POST /api/auth/register
- * @desc    Register a new user
+ * @desc    Register a new user (requires OTP verification)
  * @access  Public
  */
 router.post("/register", upload.single("resume"), async(req, res) => {
@@ -45,8 +148,10 @@ router.post("/register", upload.single("resume"), async(req, res) => {
             firstname,
             lastname,
             email,
+            mobile,
             password,
             role,
+            otpVerified, // Flag indicating OTP was verified
             // Trainer-specific fields
             demoVideoUrl,
             expertise,
@@ -63,11 +168,41 @@ router.post("/register", upload.single("resume"), async(req, res) => {
                 });
         }
 
-        // Check if all required fields are provided (password not required for trainers)
-        if (!name || !firstname || !lastname || !email) {
+        // Check if all required fields are provided
+        if (!name || !firstname || !lastname || !email || !mobile) {
             return res
                 .status(400)
-                .json({ message: "Please provide all required fields" });
+                .json({ message: "Please provide all required fields including mobile number" });
+        }
+
+        // Validate mobile number format
+        const mobileRegex = /^[6-9]\d{9}$/;
+        if (!mobileRegex.test(mobile)) {
+            return res.status(400).json({ message: "Please provide a valid 10-digit Indian mobile number" });
+        }
+
+        // Validate email format
+        const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ message: "Please provide a valid email address" });
+        }
+
+        // Check if OTP was verified (frontend should set this after verification)
+        if (!otpVerified) {
+            return res.status(400).json({
+                message: "Email verification required. Please verify your email with OTP first."
+            });
+        }
+
+        // Get client IP
+        const ipAddress = getClientIP(req);
+
+        // Double-check IP registration (security measure)
+        const ipCheck = await checkIPRegistration(ipAddress);
+        if (ipCheck.exists) {
+            return res.status(400).json({
+                message: "Only one account can be created per IP address."
+            });
         }
 
         // For students, password is required
@@ -124,12 +259,18 @@ router.post("/register", upload.single("resume"), async(req, res) => {
             }
         }
 
-        // Check if user already exists
-        let user = await User.findOne({ email });
+        // Check if user already exists with email
+        let user = await User.findOne({ email: email.toLowerCase() });
         if (user) {
             return res
                 .status(400)
                 .json({ message: "User already exists with this email" });
+        }
+
+        // Check if mobile number is already registered
+        const existingMobileUser = await User.findOne({ mobile });
+        if (existingMobileUser) {
+            return res.status(400).json({ message: "An account already exists with this mobile number" });
         }
 
         // Create user data object
@@ -137,8 +278,11 @@ router.post("/register", upload.single("resume"), async(req, res) => {
             name,
             firstname,
             lastname,
-            email,
+            email: email.toLowerCase(),
+            mobile,
             role: role || "student",
+            emailVerified: true, // OTP verified
+            registrationIP: ipAddress
         };
 
         // Add password for students only
@@ -727,7 +871,7 @@ router.post("/forgot-password", async(req, res) => {
         <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e0e0e0;">
           <p style="color: #333; line-height: 1.6;">Hello ${user.name},</p>
           <p style="color: #333; line-height: 1.6;">
-            You requested to reset your password for your UpScholar account. Click the button below to reset your password:
+            You requested to reset your password for your Upscholar account. Click the button below to reset your password:
           </p>
           <div style="text-align: center; margin: 30px 0;">
             <a href="${resetUrl}" 
@@ -750,7 +894,7 @@ router.post("/forgot-password", async(req, res) => {
         </div>
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 0 0 8px 8px; text-align: center;">
           <p style="color: #666; font-size: 12px; margin: 0;">
-            This email was sent from UpScholar Learning Platform
+            This email was sent from Upscholar Learning Platform
           </p>
         </div>
       </div>
@@ -759,7 +903,7 @@ router.post("/forgot-password", async(req, res) => {
         // Send email using the email service
         try {
             const emailResult = await sendEmail(user.email, {
-                subject: "Password Reset Request - UpScholar",
+                subject: "Password Reset Request - Upscholar",
                 html: emailHtml,
             });
 
@@ -846,7 +990,7 @@ router.post("/reset-password/:token", async(req, res) => {
         </div>
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 0 0 8px 8px; text-align: center;">
           <p style="color: #666; font-size: 12px; margin: 0;">
-            This email was sent from UpScholar Learning Platform
+            This email was sent from Upscholar Learning Platform
           </p>
         </div>
       </div>
@@ -855,7 +999,7 @@ router.post("/reset-password/:token", async(req, res) => {
         // Send confirmation email
         try {
             await sendEmail(user.email, {
-                subject: "Password Changed - UpScholar",
+                subject: "Password Changed - Upscholar",
                 html: confirmationHtml,
             });
             console.log('Password change confirmation email sent');
@@ -926,7 +1070,7 @@ router.post("/change-password", auth, async(req, res) => {
         </div>
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 0 0 8px 8px; text-align: center;">
           <p style="color: #666; font-size: 12px; margin: 0;">
-            This email was sent from UpScholar Learning Platform
+            This email was sent from Upscholar Learning Platform
           </p>
         </div>
       </div>
@@ -935,7 +1079,7 @@ router.post("/change-password", auth, async(req, res) => {
         // Send confirmation email
         try {
             await sendEmail(user.email, {
-                subject: "Password Changed - UpScholar",
+                subject: "Password Changed - Upscholar",
                 html: confirmationHtml,
             });
             console.log('Password change confirmation email sent');

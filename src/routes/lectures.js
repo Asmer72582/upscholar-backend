@@ -829,7 +829,7 @@ router.post('/:id/start-meeting', auth, async(req, res) => {
             <p style="color: #6b7280; font-size: 14px;">Or copy this link: <br><code style="background-color: #f3f4f6; padding: 4px 8px; border-radius: 4px;">${meetingLink}</code></p>
             
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-            <p>Best regards,<br><strong>UpScholar Team</strong></p>
+            <p>Best regards,<br><strong>Upscholar Team</strong></p>
           </div>
         `
             };
