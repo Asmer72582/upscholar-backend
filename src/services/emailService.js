@@ -48,8 +48,8 @@ const emailTemplates = {
         }),
 
         trainerRejection: (trainerName, email, reason) => ({
-                    subject: 'Update on Your Upscholar Trainer Application',
-                    html: `
+            subject: 'Update on Your Upscholar Trainer Application',
+            html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #dc2626;">Application Update</h2>
         <p>Dear ${trainerName},</p>
@@ -79,7 +79,7 @@ const emailTemplates = {
         </p>
       </div>
     `
-  }),
+        }),
   otpVerification: (email, otp) => ({
     subject: 'Verify Your Email - Upscholar',
     html: `

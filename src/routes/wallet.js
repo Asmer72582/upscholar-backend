@@ -137,46 +137,165 @@ router.post('/pay', auth, async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Get lecture details
+    // Get lecture details - don't populate trainer to avoid issues
     const lecture = await Lecture.findById(lectureId);
     if (!lecture) {
       return res.status(404).json({ message: 'Lecture not found' });
     }
+
+    // Validate lecture has required fields
+    if (!lecture.title || lecture.price === undefined || lecture.price === null) {
+      console.error('Lecture missing required fields:', { 
+        id: lectureId,
+        title: lecture.title, 
+        price: lecture.price 
+      });
+      return res.status(400).json({ message: 'Lecture data is invalid' });
+    }
+    
+    console.log('Lecture found:', {
+      id: lecture._id,
+      title: lecture.title,
+      price: lecture.price,
+      trainer: lecture.trainer
+    });
 
     const currentBalance = user.walletBalance || 0;
     if (currentBalance < amount) {
       return res.status(400).json({ message: 'Insufficient balance' });
     }
 
-    // Verify amount matches lecture price
-    if (amount !== lecture.price) {
-      return res.status(400).json({ message: 'Payment amount does not match lecture price' });
+    // Verify amount matches lecture price (convert both to numbers for comparison)
+    const lecturePrice = Number(lecture.price);
+    const paymentAmount = Number(amount);
+    
+    if (paymentAmount !== lecturePrice) {
+      return res.status(400).json({ 
+        message: `Payment amount (${paymentAmount}) does not match lecture price (${lecturePrice})` 
+      });
     }
 
+    // Calculate new balance - ensure both are numbers
+    const numBalance = Number(currentBalance);
+    const numAmount = Number(amount);
+    const balanceAfter = numBalance - numAmount;
+    
+    // Ensure balance doesn't go negative (shouldn't happen due to check above, but safety check)
+    if (isNaN(balanceAfter) || balanceAfter < 0) {
+      return res.status(400).json({ 
+        message: `Insufficient balance. Current: ${currentBalance}, Required: ${amount}` 
+      });
+    }
+    
+    // Ensure all numeric values are valid
+    if (isNaN(numBalance) || isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ 
+        message: 'Invalid payment amount or balance' 
+      });
+    }
+
+    // Get trainer ID - handle both ObjectId and string
+    let trainerId = lecture.trainer;
+    
+    // Convert trainer to string for metadata if it exists
+    if (trainerId) {
+      if (typeof trainerId === 'object' && trainerId._id) {
+        trainerId = trainerId._id.toString();
+      } else if (typeof trainerId === 'object') {
+        trainerId = trainerId.toString();
+      } else if (typeof trainerId === 'string') {
+        // Keep as string
+      } else {
+        trainerId = String(trainerId);
+      }
+    }
+
+    // Prepare metadata - only include fields that exist
+    const metadata = {
+      lectureTitle: String(lecture.title || 'Unknown Lecture')
+    };
+    if (trainerId) {
+      metadata.trainerId = String(trainerId);
+    }
+    
+    console.log('Transaction metadata:', metadata);
+
     // Create transaction record
-    const transaction = new Transaction({
+    const transactionData = {
       user: req.user.id,
       type: 'debit',
-      amount: amount,
-      description: `Enrolled in "${lecture.title}"`,
+      amount: Number(amount),
+      realMoneyAmount: 0,
+      currency: 'INR',
+      description: String(`Enrolled in "${lecture.title}"`),
       category: 'lecture_enrollment',
       status: 'completed',
       paymentMethod: 'wallet',
-      reference: `enrollment_${lectureId}`,
+      reference: String(`enrollment_${lectureId}`),
       relatedLecture: lectureId,
-      balanceBefore: currentBalance,
-      balanceAfter: currentBalance - amount,
-      metadata: {
-        lectureTitle: lecture.title,
-        trainerId: lecture.trainer
-      }
-    });
+      balanceBefore: Number(currentBalance),
+      balanceAfter: Number(balanceAfter),
+      metadata: metadata
+    };
+    
+    console.log('Creating transaction with data:', JSON.stringify(transactionData, null, 2));
+    
+    const transaction = new Transaction(transactionData);
 
+    // Save transaction - Mongoose will validate and convert ObjectIds automatically
     await transaction.save();
+    console.log('Transaction saved successfully:', transaction._id);
 
-    // Update user's balance
-    user.walletBalance = currentBalance - amount;
-    await user.save();
+    // Update user's balance - ensure values are valid numbers
+    const newBalance = Number(balanceAfter);
+    const newTotalSpent = Number((user.totalSpent || 0) + Number(amount));
+    
+    if (isNaN(newBalance) || newBalance < 0) {
+      // Rollback transaction if balance would be invalid
+      await Transaction.deleteOne({ _id: transaction._id });
+      return res.status(400).json({ 
+        message: 'Invalid balance calculation' 
+      });
+    }
+    
+    // Use updateOne to update wallet balance without triggering full model validation
+    // This prevents issues with required fields like 'mobile' for existing users
+    try {
+      const updateResult = await User.updateOne(
+        { _id: req.user.id },
+        { 
+          $set: {
+            walletBalance: newBalance,
+            totalSpent: newTotalSpent
+          }
+        }
+      );
+      
+      if (updateResult.matchedCount === 0) {
+        // Rollback transaction if user not found
+        await Transaction.deleteOne({ _id: transaction._id });
+        return res.status(404).json({ 
+          message: 'User not found' 
+        });
+      }
+      
+      console.log('User balance updated successfully:', {
+        oldBalance: currentBalance,
+        newBalance: newBalance,
+        amountSpent: amount
+      });
+      
+      // Update user object for response
+      user.walletBalance = newBalance;
+      user.totalSpent = newTotalSpent;
+    } catch (updateError) {
+      // Rollback transaction if update fails
+      console.error('Error updating user balance:', updateError);
+      await Transaction.deleteOne({ _id: transaction._id }).catch(e => {
+        console.error('Error rolling back transaction:', e);
+      });
+      throw updateError;
+    }
 
     res.json({
       message: 'Payment processed successfully',
@@ -191,8 +310,53 @@ router.post('/pay', auth, async (req, res) => {
       newBalance: user.walletBalance
     });
   } catch (err) {
-    console.error('Error processing payment:', err.message);
-    res.status(500).json({ message: 'Server error' });
+    console.error('\n========== PAYMENT ERROR ==========');
+    console.error('Error name:', err.name);
+    console.error('Error message:', err.message);
+    console.error('Error code:', err.code || 'N/A');
+    
+    // Handle Mongoose validation errors
+    if (err.name === 'ValidationError' && err.errors) {
+      console.error('Validation errors:', JSON.stringify(err.errors, null, 2));
+      const validationErrors = Object.keys(err.errors).map(key => ({
+        field: key,
+        message: err.errors[key].message
+      }));
+      console.error('===================================\n');
+      return res.status(400).json({ 
+        message: 'Transaction validation failed',
+        errors: validationErrors
+      });
+    }
+    
+    // Handle other Mongoose errors
+    if (err.name === 'CastError') {
+      console.error('Cast error details:', {
+        kind: err.kind,
+        value: err.value,
+        path: err.path
+      });
+      console.error('===================================\n');
+      return res.status(400).json({ 
+        message: `Invalid ${err.path}: ${err.value}`
+      });
+    }
+    
+    console.error('Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+    console.error('Error stack:', err.stack);
+    console.error('===================================\n');
+    
+    // Always return detailed error for debugging - change this to check NODE_ENV if needed
+    const isDevelopment = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
+    
+    res.status(500).json({ 
+      message: isDevelopment ? (err.message || 'An error occurred while processing payment') : 'An error occurred while processing payment',
+      ...(isDevelopment ? { 
+        details: err.message,
+        name: err.name,
+        code: err.code
+      } : {})
+    });
   }
 });
 

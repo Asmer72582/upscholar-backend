@@ -33,11 +33,20 @@ const UserSchema = new mongoose.Schema({
   },
   mobile: {
     type: String,
-    required: true,
+    required: false, // Not required for backward compatibility with existing users
     unique: true,
+    sparse: true, // Allows multiple null values but enforces uniqueness for non-null values
     trim: true,
     match: [/^[6-9]\d{9}$/, 'Please provide a valid 10-digit Indian mobile number'],
-    index: true
+    index: true,
+    validate: {
+      validator: function(v) {
+        // If mobile is provided, it must match the pattern
+        if (!v) return true; // Allow empty/null for existing users
+        return /^[6-9]\d{9}$/.test(v);
+      },
+      message: 'Please provide a valid 10-digit Indian mobile number'
+    }
   },
   emailVerified: {
     type: Boolean,

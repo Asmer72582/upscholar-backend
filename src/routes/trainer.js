@@ -155,8 +155,8 @@ router.get('/stats/dashboard', auth, async(req, res) => {
                 recentEarnings: recentEarnings.map(earning => ({
                     date: earning.createdAt.toISOString().split('T')[0],
                     amount: earning.amount,
-                    lecture: earning.metadata ?.lecture ?.title || 'Unknown Lecture',
-                    lectureId: earning.metadata ?.lecture ?._id || null
+                    lecture: earning.metadata?.lecture?.title || 'Unknown Lecture',
+                    lectureId: earning.metadata?.lecture?._id || null
                 }))
             },
             lectures: {

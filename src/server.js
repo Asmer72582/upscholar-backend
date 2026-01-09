@@ -52,8 +52,8 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'x-auth-token', 'Authorization', 'Accept'],
     exposedHeaders: ['x-auth-token'],
     credentials: true,
-    preflightContinue: false,
-    optionsSuccessStatus: 204
+    preflightContinue: true, // Allow OPTIONS to continue to route handlers
+    optionsSuccessStatus: 200
 }));
 
 // Trust proxy - IMPORTANT for nginx reverse proxy and SSL
